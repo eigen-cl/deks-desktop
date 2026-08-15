@@ -84,9 +84,10 @@ the serialized v2 document keeps a stable asset reference. Renderer Core receive
 render URL and never performs fetch, upload or filesystem work.
 
 The first Desktop source slice creates the `assets/` directory but does not yet expose an asset
-import UI or resolver. It deliberately consumes the currently published v1 compatibility packages;
-adopting `@deks-js/document` 0.3 and its v2 asset provider follows once that package is published.
-The source tree never uses a relative `file:` dependency or vendors a private copy of Core.
+import UI or resolver. It consumes the published `@deks-js/document` 0.3 and `@deks-js/react` 0.4
+packages while the editor surface remains on the compatible v1 document API. Asset ingestion and
+the v2 host resolver are the next Desktop integration boundary. The source tree never uses a
+relative `file:` dependency or vendors a private copy of Core.
 
 ## Repository boundary
 

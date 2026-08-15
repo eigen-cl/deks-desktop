@@ -1,0 +1,32 @@
+services:
+  desktop:
+    build:
+      context: .
+      target: web
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+      - deks_desktop_node_modules:/workspace/node_modules
+  rust:
+    build:
+      context: .
+      target: rust-test
+    working_dir: /workspace/src-tauri
+    volumes:
+      - .:/workspace
+      - deks_desktop_cargo_registry:/usr/local/cargo/registry
+      - deks_desktop_target:/workspace/src-tauri/target
+  tauri-check:
+    build:
+      context: .
+      target: rust
+    working_dir: /workspace/src-tauri
+    volumes:
+      - .:/workspace
+      - deks_desktop_cargo_registry:/usr/local/cargo/registry
+      - deks_desktop_target:/workspace/src-tauri/target
+
+volumes:
+  deks_desktop_node_modules:
+  deks_desktop_cargo_registry:
+  deks_desktop_target:

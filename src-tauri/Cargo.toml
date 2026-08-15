@@ -1,0 +1,26 @@
+[package]
+name = "deks-desktop"
+version = "0.1.0"
+description = "Local-first desktop host for DEKS"
+authors = ["EIGEN"]
+license = "Apache-2.0"
+edition = "2021"
+
+[lib]
+name = "deks_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+default = ["desktop"]
+desktop = ["dep:notify", "dep:tauri", "dep:tauri-plugin-dialog", "tauri/wry"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+notify = { version = "8", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", optional = true, default-features = false, features = [] }
+tauri-plugin-dialog = { version = "2", optional = true }
+tempfile = "3"

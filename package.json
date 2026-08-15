@@ -1,0 +1,40 @@
+{
+  "name": "deks-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Local-first desktop host for the open DEKS presentation format.",
+  "license": "Apache-2.0",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "npm run typecheck && vite build",
+    "test": "vitest run && node --test tests/mcp-store.test.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json --pretty false && tsc --noEmit -p tsconfig.node.json --pretty false",
+    "verify": "npm run test && npm run typecheck && npm run build",
+    "tauri": "tauri",
+    "mcp": "node mcp/server.mjs"
+  },
+  "dependencies": {
+    "@deks-js/document": "0.2.0",
+    "@deks-js/react": "0.3.0",
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.2",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^6.0.5",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.7.2",
+    "vite": "^8.2.1",
+    "vitest": "^4.1.10"
+  }
+}

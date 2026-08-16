@@ -37,6 +37,14 @@ export function watchProject(path: string): Promise<void> {
   return invoke("watch_project", { path });
 }
 
+export function installBundledSkills(destinationPath: string): Promise<string[]> {
+  return invoke("install_bundled_skills", { destinationPath });
+}
+
+export function installBundledMcp(destinationPath: string): Promise<string> {
+  return invoke("install_bundled_mcp", { destinationPath });
+}
+
 export function onProjectChanged(handler: (event: ProjectChanged) => void): Promise<UnlistenFn> {
   return listen<ProjectChanged>("deks://presentation-changed", ({ payload }) => handler(payload));
 }

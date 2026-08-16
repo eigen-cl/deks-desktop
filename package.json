@@ -1,22 +1,25 @@
 {
   "name": "deks-desktop",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Local-first desktop host for the open DEKS presentation format.",
   "license": "Apache-2.0",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "npm run typecheck && vite build",
-    "test": "vitest run && node --test tests/mcp-store.test.mjs",
+    "test": "vitest run && node --test tests/*.test.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.app.json --pretty false && tsc --noEmit -p tsconfig.node.json --pretty false",
     "verify": "npm run test && npm run typecheck && npm run build",
     "tauri": "tauri",
-    "mcp": "node mcp/server.mjs"
+    "mcp": "node mcp/server.mjs",
+    "mcp:install-browser": "playwright install chromium",
+    "release:validate": "node scripts/release-contract.mjs"
   },
   "dependencies": {
-    "@deks-js/document": "0.3.0",
-    "@deks-js/react": "0.4.0",
+    "@deks-js/document": "0.4.0",
+    "@deks-js/react": "0.5.0",
+    "@deks-js/render-preview": "0.2.3",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.2",
     "lucide-react": "^0.468.0",

@@ -53,11 +53,6 @@ test("visual QA renders one authorized presentation without resolving external a
           contentRect: { x: 80, y: 80, width: 620, height: 96 },
           overflowStatus: "overflow",
           sources: { rect: "exact", visualAabb: "calculated", contentRect: "dom" },
-        }, {
-          elementId: "logo",
-          rect: { x: 1420, y: 820, width: 240, height: 120 },
-          visualAabb: { x: 1420, y: 820, width: 240, height: 120 },
-          sources: { rect: "exact", visualAabb: "calculated" },
         }],
       };
     },
@@ -73,12 +68,11 @@ test("visual QA renders one authorized presentation without resolving external a
   assert.equal(previewRequest.slideId, "slide-1");
   assert.equal(previewRequest.width, 1280);
   assert.deepEqual(previewRequest.assets, {});
-  assert.equal(previewRequest.document.slides[0].elements[1].image.asset_url, null);
+  assert.deepEqual(previewRequest.document.slides[0].elements.map(({ id }) => id), ["headline"]);
   assert.equal(result.png.toString(), "png-bytes");
   assert.deepEqual(result.report.issues.map(({ code, element_ids: elementIds }) => [code, elementIds]), [
     ["asset_unresolved", ["logo"]],
     ["text_overflow", ["headline"]],
-    ["outside_canvas", ["logo"]],
   ]);
   assert.equal(result.report.slide_index, 0);
   assert.equal(result.report.slide_name, "Overview");

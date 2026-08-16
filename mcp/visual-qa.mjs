@@ -26,7 +26,7 @@ function prepareDocument(document, slideId) {
   const unresolvedAssets = [];
   const previewDocument = structuredClone(document);
   const previewSlide = previewDocument.slides.find(({ id }) => id === slideId);
-  previewSlide.elements = previewSlide.elements.map((element) => {
+  previewSlide.elements = previewSlide.elements.flatMap((element) => {
     if (element.kind !== "image" || (!element.assetId && !element.assetUrl && !element.src)) return element;
     unresolvedAssets.push({
       code: "asset_unresolved",
@@ -37,8 +37,7 @@ function prepareDocument(document, slideId) {
       asset_id: element.assetId ?? null,
       message: "Desktop preview did not receive safe raster bytes for this image; it was omitted.",
     });
-    const { assetUrl: _assetUrl, src: _src, ...withoutRuntimeSource } = element;
-    return withoutRuntimeSource;
+    return [];
   });
   return { previewDocument, unresolvedAssets };
 }

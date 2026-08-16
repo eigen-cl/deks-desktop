@@ -62,6 +62,9 @@ test("release workflow builds all desktop platforms, notarizes macOS and publish
   assert.match(workflow, /--target universal-apple-darwin --bundles dmg/);
   assert.match(workflow, /--bundles nsis,msi/);
   assert.match(workflow, /--bundles deb,appimage,rpm/);
+  assert.match(workflow, /hdiutil attach/);
+  assert.match(workflow, /codesign --verify --deep --strict \"\$mounted_app\"/);
+  assert.doesNotMatch(workflow, /bundle\/macos\/\*\.app/);
   assert.match(workflow, /SHA256SUMS\.txt/);
   assert.match(workflow, /gh release create/);
   assert.match(workflow, /--draft/);

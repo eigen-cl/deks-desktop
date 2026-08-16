@@ -134,10 +134,21 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          codesign --verify --deep --strict src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app
+          dmg_path=$(find src-tauri/target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)
+          test -n "$dmg_path"
+          mount_dir=$(mktemp -d)
+          cleanup() {
+            hdiutil detach "$mount_dir" -quiet || true
+            rmdir "$mount_dir" || true
+          }
+          trap cleanup EXIT
+          hdiutil attach "$dmg_path" -mountpoint "$mount_dir" -nobrowse -quiet
+          mounted_app=$(find "$mount_dir" -maxdepth 1 -name '*.app' -print -quit)
+          test -n "$mounted_app"
+          codesign --verify --deep --strict "$mounted_app"
           if [ "${{ needs.validate.outputs.notarize }}" = "true" ]; then
-            spctl --assess --type execute --verbose src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app
-            xcrun stapler validate src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            spctl --assess --type execute --verbose "$mounted_app"
+            xcrun stapler validate "$dmg_path"
           fi
       - name: Remove temporary Apple API key
         if: always() && runner.os == 'macOS'

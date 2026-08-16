@@ -65,6 +65,8 @@ test("release workflow builds all desktop platforms, notarizes macOS and publish
   assert.match(workflow, /hdiutil attach/);
   assert.match(workflow, /codesign --verify --deep --strict \"\$mounted_app\"/);
   assert.doesNotMatch(workflow, /bundle\/macos\/\*\.app/);
+  assert.match(workflow, /normalized=\$\{filename\/\/ \/\.\}/);
+  assert.match(workflow, /find downloaded-artifacts -type f -print0/);
   assert.match(workflow, /SHA256SUMS\.txt/);
   assert.match(workflow, /gh release create/);
   assert.match(workflow, /--draft/);

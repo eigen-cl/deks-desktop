@@ -10,7 +10,7 @@ test("release tags are stable SemVer and match npm, Cargo and Tauri metadata", a
   assert.equal(parseStableTag("v0.2.0"), "0.2.0");
   assert.throws(() => parseStableTag("0.2.0"), /release_tag_invalid/);
   assert.throws(() => parseStableTag("v0.2.0-beta.1"), /release_tag_invalid/);
-  await assert.doesNotReject(assertReleaseContract(root, "v0.2.0"));
+  await assert.doesNotReject(assertReleaseContract(root, "v0.2.1"));
 });
 
 test("the package contract enables native bundles and embeds only the two reviewed skills", async () => {
@@ -65,12 +65,25 @@ test("release workflow builds all desktop platforms, notarizes macOS and publish
   assert.match(workflow, /hdiutil attach/);
   assert.match(workflow, /codesign --verify --deep --strict \"\$mounted_app\"/);
   assert.doesNotMatch(workflow, /bundle\/macos\/\*\.app/);
-  assert.match(workflow, /normalized=\$\{filename\/\/ \/\.\}/);
-  assert.match(workflow, /find downloaded-artifacts -type f -print0/);
+  assert.match(workflow, /node scripts\/assemble-release-assets\.mjs/);
+  assert.match(workflow, /--input downloaded-artifacts/);
+  assert.match(workflow, /--output release-files/);
+  assert.match(workflow, /--tag "\$GITHUB_REF_NAME"/);
+  assert.match(workflow, /--published-at "\$PUBLISHED_AT"/);
+  assert.match(workflow, /--release-url "\$RELEASE_URL"/);
   assert.match(workflow, /SHA256SUMS\.txt/);
+  assert.match(workflow, /latest\.json/);
   assert.match(workflow, /gh release create/);
   assert.match(workflow, /--draft/);
   assert.match(workflow, /refs\/tags\/\$GITHUB_REF_NAME:refs\/tags\/\$GITHUB_REF_NAME/);
   assert.match(workflow, /main:refs\/remotes\/origin\/main --no-tags/);
   assert.doesNotMatch(workflow, /pull_request:/);
+
+  const publishJob = workflow.slice(workflow.indexOf("\n  publish:"));
+  assert.match(publishJob, /actions\/setup-node@[a-f0-9]+/);
+  assert.match(publishJob, /node-version: 22/);
+  assert.ok(
+    publishJob.indexOf("actions/setup-node@") < publishJob.indexOf("node scripts/assemble-release-assets.mjs"),
+    "publish must install the pinned Node runtime before assembling release assets",
+  );
 });

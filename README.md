@@ -56,7 +56,9 @@ it installs WebKitGTK in the image and therefore needs roughly 1 GB of free Dock
 
 Native installers and the release contract are documented in
 [docs/releasing.md](docs/releasing.md). macOS releases are universal, signed and notarized; Windows
-and Linux are compiled native packages and are not currently described as signed.
+and Linux are compiled native packages and are not currently described as signed. Each public tag
+uses stable installer filenames and publishes `latest.json` plus `SHA256SUMS.txt`; consumers can use
+GitHub's `releases/latest/download/...` URLs without embedding a DEKS Desktop version.
 
 ## Bundled agent setup
 

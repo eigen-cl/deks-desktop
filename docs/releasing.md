@@ -11,7 +11,28 @@ The tag workflow builds these native packages before creating one GitHub Release
 - macOS universal DMG (`arm64` + `x86_64`), signed with Developer ID, notarized and stapled;
 - Windows x64 NSIS EXE and MSI packages;
 - Linux x64 DEB, AppImage and RPM packages;
-- one `SHA256SUMS.txt` generated after all native finalization.
+- one `SHA256SUMS.txt` generated after all native finalization;
+- one schema-v1 `latest.json` with the tag, version, release URL and immutable per-tag asset URLs,
+  sizes and required SHA-256 digests.
+
+The release job renames the native output to this stable public contract:
+
+```text
+deks-desktop-macos-universal.dmg
+deks-desktop-windows-x64.exe
+deks-desktop-windows-x64.msi
+deks-desktop-linux-x64.deb
+deks-desktop-linux-x64.AppImage
+deks-desktop-linux-x64.rpm
+SHA256SUMS.txt
+latest.json
+```
+
+GitHub resolves a stable installer link such as
+`https://github.com/eigen-cl/deks-desktop/releases/latest/download/deks-desktop-macos-universal.dmg`
+to the asset in the current public release. The machine-readable feed is
+`https://github.com/eigen-cl/deks-desktop/releases/latest/download/latest.json`. A tag release is the
+only event that refreshes these downloads; pushes to `main` still run CI without publishing.
 
 Windows and Linux packages are not described as signed until platform signing is implemented and
 verified. The final publish job runs only after validation and all three native build jobs succeed.
@@ -36,11 +57,21 @@ scoped token is exposed only to the final release job.
 ### Current local-notarization handoff
 
 Until the App Store Connect API trio is configured in GitHub, use the already provisioned local
-keychain profile `forger-notary` to finish the draft. These commands operate on the exact downloaded
-DMG and never print the profile's credentials:
+keychain profile `forger-notary` to finish the draft. Download only the six installer assets into a
+clean input directory. Keep the generated output directory absent so the assembler cannot mix a new
+manifest with stale files:
 
 ```bash
-DEKS_DMG_PATH="/absolute/path/to/DEKS Desktop_VERSION_universal.dmg"
+DEKS_TAG="vX.Y.Z"
+DEKS_HANDOFF_ROOT="$(mktemp -d)"
+DEKS_RELEASE_INPUT="$DEKS_HANDOFF_ROOT/input"
+DEKS_RELEASE_OUTPUT="$DEKS_HANDOFF_ROOT/output"
+mkdir "$DEKS_RELEASE_INPUT"
+gh release download "$DEKS_TAG" \
+  --pattern 'deks-desktop-*' \
+  --dir "$DEKS_RELEASE_INPUT"
+
+DEKS_DMG_PATH="$DEKS_RELEASE_INPUT/deks-desktop-macos-universal.dmg"
 xcrun notarytool submit "$DEKS_DMG_PATH" \
   --keychain-profile forger-notary --wait
 xcrun stapler staple "$DEKS_DMG_PATH"
@@ -48,17 +79,32 @@ xcrun stapler validate "$DEKS_DMG_PATH"
 codesign --verify --verbose=2 "$DEKS_DMG_PATH"
 ```
 
-Download every draft asset into one clean directory, replace the DMG there, regenerate the aggregate
-checksum after stapling, then replace only those two draft assets:
+After the notarized DMG replaces the draft copy, rebuild all stable files into a separate directory.
+This recalculates both the DMG checksum and size before replacing the DMG, aggregate checksums and
+manifest in the draft:
 
 ```bash
-shasum -a 256 -- *.dmg *.exe *.msi *.deb *.AppImage *.rpm > SHA256SUMS.txt
-gh release upload vX.Y.Z "$DEKS_DMG_PATH" SHA256SUMS.txt --clobber
-gh release edit vX.Y.Z --draft=false --latest
+DEKS_PUBLISHED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+node scripts/assemble-release-assets.mjs \
+  --input "$DEKS_RELEASE_INPUT" \
+  --output "$DEKS_RELEASE_OUTPUT" \
+  --tag "$DEKS_TAG" \
+  --published-at "$DEKS_PUBLISHED_AT" \
+  --release-url "https://github.com/eigen-cl/deks-desktop/releases/tag/$DEKS_TAG"
+
+(cd "$DEKS_RELEASE_OUTPUT" && shasum -a 256 -c SHA256SUMS.txt)
+gh release upload "$DEKS_TAG" \
+  "$DEKS_RELEASE_OUTPUT/deks-desktop-macos-universal.dmg" \
+  "$DEKS_RELEASE_OUTPUT/SHA256SUMS.txt" \
+  "$DEKS_RELEASE_OUTPUT/latest.json" \
+  --clobber
+gh release edit "$DEKS_TAG" --draft=false --latest
 ```
 
 Before the final `gh release edit`, inspect the notarization result and checksum locally. Do not mark
-the release complete if `notarytool` is not `Accepted` or `stapler validate` fails.
+the release complete if `notarytool` is not `Accepted`, `stapler validate` fails, or the rebuilt
+checksums fail. `latest.json` reports distribution metadata and integrity; it deliberately does not
+claim code-signing or notarization status.
 
 ## Local gates and tag handoff
 
@@ -67,7 +113,7 @@ Run the portable checks in Docker:
 ```bash
 docker compose run --rm desktop npm run verify
 docker compose run --rm rust cargo test --no-default-features
-docker compose run --rm -e GITHUB_REF_NAME=v0.2.0 desktop npm run release:validate
+docker compose run --rm -e GITHUB_REF_NAME=v0.2.1 desktop npm run release:validate
 ```
 
 For a native packaging smoke test, install the official Tauri prerequisites for that host OS, then

@@ -65,6 +65,7 @@ test("release workflow builds all desktop platforms, notarizes macOS and publish
   assert.match(workflow, /SHA256SUMS\.txt/);
   assert.match(workflow, /gh release create/);
   assert.match(workflow, /--draft/);
+  assert.match(workflow, /refs\/tags\/\$GITHUB_REF_NAME:refs\/tags\/\$GITHUB_REF_NAME/);
   assert.match(workflow, /main:refs\/remotes\/origin\/main --no-tags/);
   assert.doesNotMatch(workflow, /pull_request:/);
 });

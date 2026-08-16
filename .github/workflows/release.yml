@@ -24,6 +24,7 @@ jobs:
       - name: Verify annotated tag is the reviewed main commit
         shell: bash
         run: |
+          git fetch origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME" --force --no-tags
           git fetch origin main:refs/remotes/origin/main --no-tags
           test "$(git cat-file -t "$GITHUB_REF_NAME")" = tag
           test "$(git rev-list -n 1 "$GITHUB_REF_NAME")" = "$(git rev-parse origin/main)"

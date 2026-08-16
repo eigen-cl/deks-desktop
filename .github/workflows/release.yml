@@ -177,7 +177,11 @@ jobs:
         shell: bash
         run: |
           mkdir release-files
-          find downloaded-artifacts -type f -exec cp {} release-files/ \;
+          while IFS= read -r -d '' asset; do
+            filename=$(basename "$asset")
+            normalized=${filename// /.}
+            cp "$asset" "release-files/$normalized"
+          done < <(find downloaded-artifacts -type f -print0)
           test "$(find release-files -type f | wc -l)" -eq 6
           cd release-files
           sha256sum -- * > SHA256SUMS.txt

@@ -14,10 +14,11 @@ use std::{
 #[cfg(feature = "desktop")]
 use std::sync::Mutex;
 #[cfg(feature = "desktop")]
-use tauri::{Emitter, State};
+use tauri::{Emitter, Manager, State};
 
 const DOCUMENT_FILE: &str = "document.deks.json";
 const LOCK_FILE: &str = "project.lock";
+const SKILL_NAMES: [&str; 2] = ["deks-presentations", "design-deks-presentations"];
 
 #[cfg(feature = "desktop")]
 struct WatchState(Mutex<Option<RecommendedWatcher>>);
@@ -104,6 +105,89 @@ fn atomic_write(path: &Path, document: &Value) -> Result<(), String> {
         let _ = directory.sync_all();
     }
     Ok(())
+}
+
+fn copy_tree(source: &Path, destination: &Path) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(source).map_err(|_| "bundle_source_missing".to_string())?;
+    if metadata.file_type().is_symlink() {
+        return Err("bundle_source_symlink".into());
+    }
+    if metadata.is_file() {
+        fs::copy(source, destination).map_err(|_| "bundle_copy_failed".to_string())?;
+        return Ok(());
+    }
+    if !metadata.is_dir() {
+        return Err("bundle_source_invalid".into());
+    }
+    fs::create_dir(destination).map_err(|_| "bundle_copy_failed".to_string())?;
+    for entry in fs::read_dir(source).map_err(|_| "bundle_copy_failed".to_string())? {
+        let entry = entry.map_err(|_| "bundle_copy_failed".to_string())?;
+        copy_tree(&entry.path(), &destination.join(entry.file_name()))?;
+    }
+    Ok(())
+}
+
+fn installation_stage(destination: &Path, kind: &str) -> PathBuf {
+    let nonce = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    destination.join(format!(".deks-{kind}-{}-{nonce}", std::process::id()))
+}
+
+fn install_bundled_skills_from(resource: &Path, destination: &Path) -> Result<Vec<&'static str>, String> {
+    let destination = fs::canonicalize(destination).map_err(|_| "destination_not_found".to_string())?;
+    if !destination.is_dir() {
+        return Err("destination_not_directory".into());
+    }
+    for skill in SKILL_NAMES {
+        if destination.join(skill).exists() {
+            return Err("skill_already_exists".into());
+        }
+    }
+
+    let stage = installation_stage(&destination, "skills-install");
+    fs::create_dir(&stage).map_err(|_| "destination_not_writable".to_string())?;
+    let result = (|| {
+        for skill in SKILL_NAMES {
+            copy_tree(&resource.join("skills").join(skill), &stage.join(skill))?;
+        }
+        let mut installed = Vec::new();
+        for skill in SKILL_NAMES {
+            let target = destination.join(skill);
+            if let Err(error) = fs::rename(stage.join(skill), &target) {
+                for prior in installed {
+                    let _ = fs::remove_dir_all(destination.join(prior));
+                }
+                return Err(format!("bundle_install_failed:{error}"));
+            }
+            installed.push(skill);
+        }
+        Ok(installed)
+    })();
+    let _ = fs::remove_dir_all(stage);
+    result
+}
+
+fn install_bundled_mcp_from(resource: &Path, destination: &Path) -> Result<PathBuf, String> {
+    let destination = fs::canonicalize(destination).map_err(|_| "destination_not_found".to_string())?;
+    if !destination.is_dir() {
+        return Err("destination_not_directory".into());
+    }
+    let target = destination.join("deks-local-mcp");
+    if target.exists() {
+        return Err("mcp_already_exists".into());
+    }
+    let stage = installation_stage(&destination, "mcp-install");
+    let result = (|| {
+        copy_tree(resource, &stage)?;
+        fs::rename(&stage, &target).map_err(|_| "bundle_install_failed".to_string())?;
+        Ok(target)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_dir_all(stage);
+    }
+    result
 }
 
 fn write_receipt(path: &Path, change: &ProjectChanged) -> Result<(), String> {
@@ -211,6 +295,22 @@ fn save_project(
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
+fn install_bundled_skills(app: tauri::AppHandle, destination_path: String) -> Result<Vec<String>, String> {
+    let resources = app.path().resource_dir().map_err(|_| "resources_unavailable".to_string())?;
+    install_bundled_skills_from(&resources.join("bundled-skills"), Path::new(&destination_path))
+        .map(|skills| skills.into_iter().map(str::to_string).collect())
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn install_bundled_mcp(app: tauri::AppHandle, destination_path: String) -> Result<String, String> {
+    let resources = app.path().resource_dir().map_err(|_| "resources_unavailable".to_string())?;
+    install_bundled_mcp_from(&resources.join("bundled-mcp"), Path::new(&destination_path))
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
 fn watch_project(app: tauri::AppHandle, state: State<'_, WatchState>, path: String) -> Result<(), String> {
     let path = project_path(&path)?;
     let watched_path = path.clone();
@@ -239,7 +339,14 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(WatchState(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![create_project, open_project, save_project, watch_project])
+        .invoke_handler(tauri::generate_handler![
+            create_project,
+            open_project,
+            save_project,
+            watch_project,
+            install_bundled_skills,
+            install_bundled_mcp,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running DEKS Desktop");
 }
@@ -299,5 +406,58 @@ mod tests {
         ).unwrap_err();
         assert_eq!(conflict, "revision_conflict");
         assert_eq!(revision(&read_document(directory.path()).unwrap()).unwrap(), 1);
+    }
+
+    #[test]
+    fn bundled_skills_install_as_complete_directories_without_overwriting() {
+        let resource = tempfile::tempdir().unwrap();
+        let destination = tempfile::tempdir().unwrap();
+        for skill in SKILL_NAMES {
+            let skill_path = resource.path().join("skills").join(skill).join("references");
+            fs::create_dir_all(&skill_path).unwrap();
+            fs::write(resource.path().join("skills").join(skill).join("SKILL.md"), skill).unwrap();
+            fs::write(skill_path.join("guide.md"), "guide").unwrap();
+        }
+
+        let installed = install_bundled_skills_from(resource.path(), destination.path()).unwrap();
+        assert_eq!(installed, SKILL_NAMES);
+        assert_eq!(fs::read_to_string(destination.path().join(SKILL_NAMES[0]).join("references/guide.md")).unwrap(), "guide");
+
+        let existing = destination.path().join(SKILL_NAMES[0]).join("SKILL.md");
+        fs::write(&existing, "personalized").unwrap();
+        assert_eq!(install_bundled_skills_from(resource.path(), destination.path()).unwrap_err(), "skill_already_exists");
+        assert_eq!(fs::read_to_string(existing).unwrap(), "personalized");
+    }
+
+    #[test]
+    fn bundled_mcp_installs_without_a_source_checkout_and_never_overwrites() {
+        let resource = tempfile::tempdir().unwrap();
+        let destination = tempfile::tempdir().unwrap();
+        fs::create_dir(resource.path().join("mcp")).unwrap();
+        fs::write(resource.path().join("package.json"), "{}").unwrap();
+        fs::write(resource.path().join("mcp/server.mjs"), "// server").unwrap();
+
+        let installed = install_bundled_mcp_from(resource.path(), destination.path()).unwrap();
+        assert_eq!(installed, destination.path().join("deks-local-mcp"));
+        assert!(installed.join("mcp/server.mjs").is_file());
+        fs::write(installed.join("package.json"), "personalized").unwrap();
+        assert_eq!(install_bundled_mcp_from(resource.path(), destination.path()).unwrap_err(), "mcp_already_exists");
+        assert_eq!(fs::read_to_string(installed.join("package.json")).unwrap(), "personalized");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bundled_installation_rejects_symlinks_in_packaged_content() {
+        use std::os::unix::fs::symlink;
+
+        let resource = tempfile::tempdir().unwrap();
+        let destination = tempfile::tempdir().unwrap();
+        let outside = tempfile::NamedTempFile::new().unwrap();
+        fs::create_dir(resource.path().join("mcp")).unwrap();
+        fs::write(resource.path().join("package.json"), "{}").unwrap();
+        symlink(outside.path(), resource.path().join("mcp/linked-secret")).unwrap();
+
+        assert_eq!(install_bundled_mcp_from(resource.path(), destination.path()).unwrap_err(), "bundle_source_symlink");
+        assert!(!destination.path().join("deks-local-mcp").exists());
     }
 }

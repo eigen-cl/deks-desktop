@@ -40,6 +40,8 @@ ID. Local events include the full document on reload because no network transfer
 In the Core v2 contract, serialized asset sources are either packaged references or HTTPS references. `Blob` and
 `Uint8Array` are facade inputs, not JSON values. A host-provided resolver converts a packaged asset
 to a short-lived `blob:` URL and is responsible for revoking it. Core never fetches a remote URL.
-The initial Desktop UI consumes the published Document 0.3 / React 0.4 packages through their v1
-compatibility surface and creates the local `assets/` directory. Asset ingestion and lifecycle
-resolution remain an explicit next host boundary; this slice does not claim them prematurely.
+The Desktop UI consumes the published Document 0.4 / React 0.5 packages through their v1
+compatibility surface and creates the local `assets/` directory. The local MCP composes the
+published render-preview worker for read-only PNG and DOM measurement QA; it does not duplicate the
+renderer. Asset ingestion and lifecycle resolution remain an explicit next host boundary, so an
+unresolved image is omitted with an explicit diagnostic rather than fetched or read from a path.

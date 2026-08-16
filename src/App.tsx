@@ -1,8 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DeksEditor } from "@deks-js/react";
 import type { DeksDocument, DeksEditorChange } from "@deks-js/document";
-import { Bot, Check, FolderOpen, Plus, Radio, X } from "lucide-react";
-import { chooseDirectory, createProject, onProjectChanged, openProject, saveProject, watchProject } from "./desktop-api";
+import { Bot, Check, FolderOpen, PackagePlus, Plus, Radio, X } from "lucide-react";
+import {
+  chooseDirectory,
+  createProject,
+  installBundledMcp,
+  installBundledSkills,
+  onProjectChanged,
+  openProject,
+  saveProject,
+  watchProject,
+} from "./desktop-api";
 import { createPresentation, type OpenProject, type ProjectChanged } from "./model";
 
 function changedIds(change: DeksEditorChange): { slides: string[]; elements: string[] } {
@@ -25,6 +34,7 @@ export function App() {
   const [activity, setActivity] = useState<ProjectChanged>();
   const [error, setError] = useState<string>();
   const [choosingFolder, setChoosingFolder] = useState(false);
+  const [agentSetupStatus, setAgentSetupStatus] = useState<string>();
   const currentRef = useRef<OpenProject>();
   currentRef.current = project;
 
@@ -80,6 +90,40 @@ export function App() {
     }
   };
 
+  const installSkills = async () => {
+    setChoosingFolder(true);
+    setAgentSetupStatus(undefined);
+    try {
+      const destination = await chooseDirectory("Elige la carpeta skills de tu agente");
+      if (!destination) return;
+      await installBundledSkills(destination);
+      setAgentSetupStatus("Skills instaladas. Reinicia tu agente para cargarlas.");
+    } catch (caught) {
+      setAgentSetupStatus(String(caught).includes("skill_already_exists")
+        ? "No reemplazamos las skills existentes. Elige otra carpeta o revísalas antes de actualizar."
+        : "No pudimos instalar las skills en esa carpeta.");
+    } finally {
+      setChoosingFolder(false);
+    }
+  };
+
+  const installLocalMcp = async () => {
+    setChoosingFolder(true);
+    setAgentSetupStatus(undefined);
+    try {
+      const destination = await chooseDirectory("Elige dónde instalar el runtime MCP local");
+      if (!destination) return;
+      await installBundledMcp(destination);
+      setAgentSetupStatus("Runtime instalado en deks-local-mcp. Sigue su README para instalar Node y Chromium.");
+    } catch (caught) {
+      setAgentSetupStatus(String(caught).includes("mcp_already_exists")
+        ? "No reemplazamos el runtime MCP existente. Elige otra carpeta o actualízalo de forma explícita."
+        : "No pudimos instalar el runtime MCP en esa carpeta.");
+    } finally {
+      setChoosingFolder(false);
+    }
+  };
+
   const extraControls = useMemo(() => (
     <div className="live-state" role="status">
       <Radio aria-hidden="true" size={16} />
@@ -108,6 +152,18 @@ export function App() {
             <Check aria-hidden="true" />
             <span><strong>100% local.</strong> Documento, assets, historial y MCP permanecen en tu equipo.</span>
           </div>
+          <section className="agent-setup" aria-labelledby="agent-setup-title">
+            <div>
+              <p className="eyebrow">Agentes</p>
+              <h2 id="agent-setup-title">Instala sólo donde tú elijas.</h2>
+              <p>Incluye las dos skills oficiales y un runtime MCP local. Nunca reemplazamos archivos existentes.</p>
+            </div>
+            <div className="welcome__actions">
+              <button type="button" className="button" disabled={choosingFolder} onClick={() => void installSkills()}><PackagePlus aria-hidden="true" /> Instalar skills</button>
+              <button type="button" className="button" disabled={choosingFolder} onClick={() => void installLocalMcp()}><Bot aria-hidden="true" /> Instalar MCP local</button>
+            </div>
+            {agentSetupStatus && <p className="agent-setup__status" role="status">{agentSetupStatus}</p>}
+          </section>
         </section>
       </main>
     );

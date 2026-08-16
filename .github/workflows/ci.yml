@@ -18,6 +18,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npx playwright install --with-deps chromium
       - run: npm run verify
   rust:
     runs-on: ubuntu-24.04

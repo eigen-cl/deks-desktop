@@ -1,0 +1,22 @@
+{
+  "source": {
+    "repository": "https://github.com/eigen-cl/deks-plugin",
+    "version": "0.1.7"
+  },
+  "skills": [
+    "deks-presentations",
+    "design-deks-presentations"
+  ],
+  "sha256": {
+    "skills/deks-presentations/SKILL.md": "08290aec33636530a2ef07f38336430e0981243ac6052a393179789d9e797646",
+    "skills/deks-presentations/agents/openai.yaml": "7eb4fa349fe3ef75e433129d6d97f72722f243a00e8c40a4e53546fc9989130b",
+    "skills/deks-presentations/references/recovery.md": "91a50f8f3f7f5beaa7b596c1f228b69413c9c7a08268a88650a46908129f09e6",
+    "skills/deks-presentations/references/tools.md": "ceaa78ed464d37d2981ad66a15ef4d82278afad274e514c81e2f9d7cc1ff45f7",
+    "skills/design-deks-presentations/SKILL.md": "950a4b8ac74dcfacb8baa90881f186552aaa1e9ac024aca76bbcdadd732f98bf",
+    "skills/design-deks-presentations/agents/openai.yaml": "4ea5ddd27dec3a5a3f477c7e785c145d5ee34f026061a406fcec67cb53e45696",
+    "skills/design-deks-presentations/references/audit.md": "5382a13079f0c77b93ddd908da82fbb1ee45a17aab8023e4908aff219730d875",
+    "skills/design-deks-presentations/references/motion.md": "9b26b7b15d28b0736c936fdaa98f23a7020384e076d7eefe15e3aa2dab0ed0e1",
+    "skills/design-deks-presentations/references/story-and-evidence.md": "3b7d391ae4d19f9b97ff0e21236fe845c7d2654fcb0c5b2efb5b2b843d16b290",
+    "skills/design-deks-presentations/references/visual-system.md": "943ebaecf7ce3fe81737770d65387446d1af68d699ffaf38dd00475bdc3d3cf3"
+  }
+}

@@ -1,0 +1,11 @@
+interface:
+  display_name: "DEKS Product Operations"
+  short_description: "Operate DEKS tools safely and precisely"
+  default_prompt: "Use $deks-presentations to inspect and safely edit a presentation in DEKS."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "deks"
+      description: "DEKS presentation authoring server"
+      transport: "streamable_http"
+      url: "https://api-deks.eigen.cl/mcp/"

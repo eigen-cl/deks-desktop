@@ -28,6 +28,11 @@ h1 { max-width: 700px; margin: 12px 0 20px; font-size: clamp(38px, 6vw, 68px); l
 .error-message { margin: 16px 0 0; color: #ffad91; line-height: 1.5; }
 .local-contract { display: flex; gap: 12px; margin-top: 28px; padding-top: 24px; border-top: 1px solid #363a43; color: #b9bdc7; line-height: 1.5; }
 .local-contract svg { flex: 0 0 auto; color: #64d99a; }
+.agent-setup { display: grid; gap: 14px; margin-top: 28px; padding-top: 24px; border-top: 1px solid #363a43; }
+.agent-setup h2 { margin: 4px 0 8px; font-size: 22px; }
+.agent-setup p { margin: 0; color: #b9bdc7; line-height: 1.5; }
+.agent-setup .welcome__actions { margin-top: 0; }
+.agent-setup__status { color: #daddE5 !important; }
 .workspace { min-height: 100vh; }
 .live-state { min-height: 36px; display: inline-flex; align-items: center; gap: 8px; margin-left: auto; padding: 0 12px; border: 1px solid #3f4652; border-radius: 999px; color: #c8ced9; font-size: 13px; }
 .live-state svg { color: #64d99a; }

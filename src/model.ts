@@ -1,8 +1,48 @@
-import { DeksPresentation, assertDeksDocument, type DeksDocument } from "@deks-js/document";
+import { DeksPresentation, assertDeksDocument, type DeksDocument, type SlideBackground } from "@deks-js/document";
 
 export interface OpenProject {
   path: string;
   document: DeksDocument;
+}
+
+/** Lo que el host resuelve una vez al arrancar, antes del primer render. */
+export interface Workspace {
+  defaultRoot: string;
+  locale: string | null;
+  sourceFolders: string[];
+}
+
+/**
+ * Resumen para el inicio. Sin `elements`: la tarjeta dibuja el fondo real de la
+ * primera slide, que es lo que hace reconocible una presentación de un vistazo,
+ * y cargar los elementos de cada carpeta sólo para eso sería caro y no se ve.
+ */
+export interface ProjectSummary {
+  path: string;
+  root: string;
+  name: string;
+  revision: number;
+  slideCount: number;
+  updatedAtMs: number;
+  canvas: { width: number; height: number } | null;
+  background: SlideBackground | null;
+}
+
+export const PRESENTATION_SIZES = [
+  { id: "wide", width: 1920, height: 1080 },
+  { id: "standard", width: 1440, height: 1080 },
+  { id: "square", width: 1080, height: 1080 },
+] as const;
+
+export type PresentationSizeId = (typeof PRESENTATION_SIZES)[number]["id"];
+
+/** Traduce un fondo canónico a CSS. Sirve igual para una miniatura y una tarjeta. */
+export function backgroundCss(background: SlideBackground | null | undefined): string {
+  if (!background) return "var(--color-surface-raised)";
+  if (background.kind === "linear-gradient") {
+    return `linear-gradient(${background.angleDeg}deg, ${background.startColor}, ${background.endColor})`;
+  }
+  return background.color;
 }
 
 export interface ProjectChanged {
@@ -19,11 +59,15 @@ export interface ProjectChanged {
  * `@deks-js/document`, y Desktop no puede quedarse con un formato viejo cuando
  * el contrato avanza.
  */
-export function createPresentation(name: string, id: string = crypto.randomUUID()): DeksDocument {
+export function createPresentation(
+  name: string,
+  canvas: { width: number; height: number } = { width: 1920, height: 1080 },
+  id: string = crypto.randomUUID(),
+): DeksDocument {
   const presentation = new DeksPresentation({
     id,
     name,
-    canvas: { width: 1600, height: 900 },
+    canvas,
     motionBeatMs: 600,
   });
   presentation.addSlide({ name: "Inicio" });

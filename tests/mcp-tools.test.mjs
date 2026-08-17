@@ -50,3 +50,41 @@ test("MCP returns PNG content and a machine-readable QA report without base64 du
   assert.deepEqual(result.structuredContent, report);
   assert.equal(result.content[1].text.includes(result.content[0].data), false);
 });
+
+test("add_asset takes bytes, never a filesystem path", () => {
+  const tool = MCP_TOOLS.find(({ name }) => name === "add_asset");
+  assert.ok(tool);
+  // MCP sólo ve la raíz autorizada. Aceptar una ruta convertiría esta
+  // herramienta en un lector de archivos arbitrario del equipo.
+  assert.equal("path" in tool.inputSchema.properties, false);
+  assert.equal("source_path" in tool.inputSchema.properties, false);
+  assert.equal(tool.inputSchema.additionalProperties, false);
+  assert.deepEqual(tool.inputSchema.required, ["presentation_id", "expected_revision", "idempotency_key", "base64"]);
+  // El tipo lo deciden los bytes: no hay `media_type` que un agente pueda mentir.
+  assert.equal("media_type" in tool.inputSchema.properties, false);
+  assert.equal(tool.annotations.readOnlyHint, false);
+});
+
+test("add_asset reaches the store with the caller's revision and idempotency key", async () => {
+  const calls = [];
+  const runtime = new McpToolRuntime({
+    store: { addAsset: async (args) => { calls.push(args); return { revision: 4 }; } },
+    visualQa: {},
+  });
+
+  await runtime.call("add_asset", {
+    presentation_id: "presentation-1",
+    expected_revision: 3,
+    idempotency_key: "agent-key-0001",
+    base64: "AAAA",
+    original_filename: "diagram.png",
+  });
+
+  assert.deepEqual(calls, [{
+    presentationId: "presentation-1",
+    expectedRevision: 3,
+    idempotencyKey: "agent-key-0001",
+    base64: "AAAA",
+    originalFilename: "diagram.png",
+  }]);
+});

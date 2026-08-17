@@ -3,7 +3,30 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { DeksDocument } from "@deks-js/document";
 import { toCanonicalDocument } from "./legacy-document";
-import type { OpenProject, ProjectChanged } from "./model";
+import type { ImportedAsset } from "./editor/elements";
+import type { Locale } from "./i18n";
+import type { OpenProject, ProjectChanged, ProjectSummary, Workspace } from "./model";
+
+/** Raíz por defecto, idioma guardado y carpetas fuente en una sola llamada. */
+export function readWorkspace(): Promise<Workspace> {
+  return invoke<Workspace>("read_workspace");
+}
+
+export function listProjects(roots: string[]): Promise<ProjectSummary[]> {
+  return invoke<ProjectSummary[]>("list_projects", { roots });
+}
+
+export function setLocale(locale: Locale): Promise<void> {
+  return invoke("set_locale", { locale });
+}
+
+export function addSourceFolder(path: string): Promise<string[]> {
+  return invoke<string[]>("add_source_folder", { path });
+}
+
+export function removeSourceFolder(path: string): Promise<string[]> {
+  return invoke<string[]>("remove_source_folder", { path });
+}
 
 export async function chooseDirectory(title: string): Promise<string | undefined> {
   const selected = await open({ directory: true, multiple: false, title });
@@ -54,4 +77,23 @@ export function installBundledMcp(destinationPath: string): Promise<string> {
 
 export function onProjectChanged(handler: (event: ProjectChanged) => void): Promise<UnlistenFn> {
   return listen<ProjectChanged>("deks://presentation-changed", ({ payload }) => handler(payload));
+}
+
+/** Copia un archivo del sistema dentro de la carpeta del proyecto. */
+export function importAsset(path: string, sourcePath: string): Promise<ImportedAsset> {
+  return invoke<ImportedAsset>("import_asset", { path, sourcePath });
+}
+
+export function readAsset(path: string, assetId: string, mediaType: string): Promise<number[]> {
+  return invoke<number[]>("read_asset", { path, assetId, mediaType });
+}
+
+export async function chooseImage(title: string): Promise<string | undefined> {
+  const selected = await open({
+    title,
+    multiple: false,
+    directory: false,
+    filters: [{ name: "Imagen", extensions: ["png", "jpg", "jpeg", "gif", "webp"] }],
+  });
+  return typeof selected === "string" ? selected : undefined;
 }

@@ -1,20 +1,27 @@
 ## Changes
 
-- Run on the published DEKS Core 1.0 contract: canonical documents, canonical MCP commands and
-  previews rendered without an intermediate format.
-- Open folders written by earlier versions: they are upgraded in memory, so a local project is never
-  lost to the format change.
-- Check for a signed update on launch and offer it without blocking local work. Downloading stays an
-  explicit decision, and the signature is verified before anything is installed.
-- Use the canonical DEKS brand, typefaces and colour tokens instead of an app-specific variant.
-- Package DEKS Desktop for macOS, Windows and Linux.
-- Include the reviewed DEKS operation and presentation-design skills with explicit, no-overwrite installation.
-- Include an installable local MCP runtime for revision-safe agent editing and read-only slide preview QA.
-- Add signed and notarized universal macOS distribution plus SHA-256 checksums for every installer.
+- Start from a new home that shows recent local presentations and lets you add the folders you
+  already use.
+- Create widescreen, standard or square presentations directly in the default DEKS folder.
+- Edit slides in a Desktop-native workspace with a slide rail, canvas, inspector and presentation
+  mode while keeping files compatible with DEKS Web.
+- Insert and edit text, shapes, lines, icons and images through the same portable DEKS format.
+- Import PNG, JPEG, GIF and WebP images into the presentation folder so projects remain movable and
+  self-contained.
+- Undo and redo confirmed edits one command at a time without breaking revision-safe collaboration
+  with local agents.
+- Use the complete interface in Spanish or English and keep the selected language between launches.
+- Let local agents add image assets and render those images in slide preview QA without granting
+  access to arbitrary filesystem paths.
 
 ## Verification
 
-- Download the installer for your platform and `SHA256SUMS.txt` from this release.
-- Run `sha256sum -c SHA256SUMS.txt --ignore-missing` from the download directory.
-- macOS artifacts are signed, notarized and stapled. Windows and Linux artifacts are compiled packages; this release does not claim platform signing for them.
-- The in-app update channel stays inactive until its signing key pair is configured for the repository. Until then this release publishes installers only, and updating is a manual download.
+- `docker compose run --rm desktop npm run verify`
+- `docker compose run --rm rust cargo test --no-default-features`
+- `docker compose run --rm -e GITHUB_REF_NAME=v0.4.0 desktop npm run release:validate`
+- Download the installer for your platform and `SHA256SUMS.txt` from the release, then verify the
+  matching checksum before installation.
+- macOS artifacts are signed, notarized and stapled. Windows and Linux artifacts are compiled
+  packages; this release does not claim platform signing for them.
+- The in-app update channel remains inactive until the repository signing key pair is configured;
+  until then, updating remains a manual download.

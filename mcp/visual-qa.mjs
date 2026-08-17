@@ -19,7 +19,7 @@ function isOutsideCanvas(rect, document) {
     || rect.y + rect.height > document.canvas.height;
 }
 
-function prepareDocument(document, slideId) {
+function prepareDocument(document, slideId, resolved = {}) {
   const slide = document.slides.find(({ id }) => id === slideId);
   if (!slide) throw new Error("slide_not_found");
   const unresolvedAssets = [];
@@ -31,6 +31,9 @@ function prepareDocument(document, slideId) {
   previewSlide.states = previewSlide.states.flatMap((state) => {
     const identity = identities.get(state.elementId);
     if (identity?.kind !== "image" || !state.assetId) return state;
+    // Con bytes disponibles la imagen se renderiza como cualquier otro
+    // elemento; sólo se omite la que de verdad no se pudo resolver.
+    if (resolved[state.assetId]) return state;
     unresolvedAssets.push({
       code: "asset_unresolved",
       severity: "warning",
@@ -60,7 +63,8 @@ export class VisualQaService {
     const slideIndex = document.slides.findIndex(({ id }) => id === slideId);
     if (slideIndex < 0) throw new Error("slide_not_found");
     const slide = document.slides[slideIndex];
-    const { previewDocument, unresolvedAssets } = prepareDocument(document, slideId);
+    const resolvedAssets = await this.store.readAssets?.(presentationId) ?? {};
+    const { previewDocument, unresolvedAssets } = prepareDocument(document, slideId, resolvedAssets);
     let result;
     try {
       result = await this.renderer.render({
@@ -69,7 +73,7 @@ export class VisualQaService {
         document: previewDocument,
         slideId,
         width,
-        assets: {},
+        assets: resolvedAssets,
       });
     } catch {
       throw new Error("render_failed");

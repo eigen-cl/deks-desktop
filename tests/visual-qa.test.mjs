@@ -134,3 +134,53 @@ test("visual QA delegates browser lifecycle cleanup", async () => {
   await service.close();
   assert.equal(closed, true);
 });
+
+test("visual QA renders an image whose bytes exist and only warns about the ones missing", async () => {
+  const document = {
+    format: "deks", id: "p1", name: "Deck", revision: 3,
+    canvas: { width: 1600, height: 900 }, motionBeatMs: 600,
+    palette: { primary: "#111111", secondary: "#222222", accent: "#ff6600", background: "#ffffff", text: "#111111", subtext: "#555555" },
+    history: { canUndo: false, canRedo: false },
+    assets: [
+      { id: "asset-ok", kind: "embedded", mediaType: "image/png" },
+      { id: "asset-gone", kind: "embedded", mediaType: "image/png" },
+    ],
+    elements: [
+      { id: "shown", kind: "image", name: "Shown", isLocked: false },
+      { id: "missing", kind: "image", name: "Missing", isLocked: false },
+    ],
+    slides: [{
+      id: "s1", name: "One", isTemplate: false,
+      background: { kind: "solid", color: "#ffffff" },
+      inPreset: "fade", outPreset: "fade", inDurationMultiplier: 1, outDurationMultiplier: 1,
+      states: [
+        { elementId: "shown", x: 0, y: 0, width: 100, height: 100, rotationDeg: 0, opacity: 1, zIndex: 1, assetId: "asset-ok", alt: "ok", fit: "contain" },
+        { elementId: "missing", x: 0, y: 0, width: 100, height: 100, rotationDeg: 0, opacity: 1, zIndex: 2, assetId: "asset-gone", alt: "gone", fit: "contain" },
+      ],
+    }],
+    transitions: [],
+  };
+
+  let received;
+  const service = new VisualQaService({
+    store: {
+      getPresentation: async () => document,
+      readAssets: async () => ({ "asset-ok": { mediaType: "image/png", base64: "AAAA" } }),
+    },
+    renderer: {
+      render: async (request) => {
+        received = request;
+        return { png: Buffer.from("png"), measurements: [], width: 1600, height: 900 };
+      },
+    },
+  });
+
+  const { report } = await service.renderSlide({ presentationId: "p1", slideId: "s1" });
+
+  // El asset resuelto llega al renderer y su elemento sobrevive en la slide.
+  assert.deepEqual(Object.keys(received.assets), ["asset-ok"]);
+  assert.deepEqual(received.document.slides[0].states.map((state) => state.elementId), ["shown"]);
+  const unresolved = report.issues.filter((issue) => issue.code === "asset_unresolved");
+  assert.equal(unresolved.length, 1);
+  assert.equal(unresolved[0].asset_id, "asset-gone");
+});

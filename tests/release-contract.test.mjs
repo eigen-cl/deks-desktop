@@ -47,8 +47,8 @@ test("the installed MCP payload is self-contained apart from documented Node and
   assert.equal(packageJson.scripts.start, "node mcp/server.mjs");
   assert.equal(packageJson.scripts["install-browser"], "playwright install chromium");
   assert.deepEqual(packageJson.dependencies, {
-    "@deks-js/document": "0.4.0",
-    "@deks-js/render-preview": "0.2.3",
+    "@deks-js/document": "2.0.0",
+    "@deks-js/render-preview": "2.0.0",
     "playwright": "1.62.1",
   });
   const readme = await readFile(new URL("bundled-mcp/README.md", root), "utf8");

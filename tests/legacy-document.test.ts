@@ -19,8 +19,6 @@ const legacy = {
     name: "Inicio",
     isTemplate: false,
     background: { kind: "solid", color: "#0b0c0e" },
-    inPreset: "fade", outPreset: "fade",
-    inDurationMultiplier: 1, outDurationMultiplier: 1,
     elements: [{
       id: "presentation-1:element:titulo",
       kind: "text", name: "Título", isLocked: false,
@@ -32,7 +30,6 @@ const legacy = {
       overflowMode: "hidden", fill: "#f2f1ec",
     }],
   }],
-  transitions: [],
 };
 
 describe("proyectos anteriores al contrato canónico", () => {

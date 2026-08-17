@@ -17,9 +17,9 @@
     "release:validate": "node scripts/release-contract.mjs"
   },
   "dependencies": {
-    "@deks-js/document": "1.0.0",
-    "@deks-js/renderer-core": "1.0.0",
-    "@deks-js/render-preview": "1.0.0",
+    "@deks-js/document": "2.0.0",
+    "@deks-js/renderer-core": "2.0.0",
+    "@deks-js/render-preview": "2.0.0",
     "@fontsource/poppins": "^5.3.0",
     "@fontsource/roboto": "^5.3.0",
     "@tauri-apps/api": "^2.11.1",

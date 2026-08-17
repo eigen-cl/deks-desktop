@@ -40,6 +40,13 @@ export function isLegacyDocument(value: unknown): boolean {
   return "canvasWidth" in document || Array.isArray(document.slides);
 }
 
+/** Un documento anterior no declara movimiento: hereda el del contrato nuevo. */
+const DEFAULT_MOTION = {
+  in: { animation: { kind: "fade" }, durationBeats: 1, delayMs: 0, easing: "ease-out" },
+  out: { animation: { kind: "fade" }, durationBeats: 1, delayMs: 0, easing: "ease-in" },
+  morph: { animation: { kind: "morph" }, durationBeats: 1, delayMs: 0, easing: "ease-in-out" },
+} as const;
+
 export function upgradeLegacyDocument(value: unknown): DeksDocument {
   const legacy = value as Record<string, any>;
   const identities = new Map<string, DeksElement>();
@@ -62,10 +69,6 @@ export function upgradeLegacyDocument(value: unknown): DeksDocument {
       name: String(slide.name ?? "Slide"),
       isTemplate: Boolean(slide.isTemplate),
       background: slide.background ?? { kind: "solid", color: "#0b0c0e" },
-      inPreset: slide.inPreset ?? "fade",
-      outPreset: slide.outPreset ?? "fade",
-      inDurationMultiplier: slide.inDurationMultiplier ?? 1,
-      outDurationMultiplier: slide.outDurationMultiplier ?? 1,
       states,
     };
   });
@@ -80,28 +83,12 @@ export function upgradeLegacyDocument(value: unknown): DeksDocument {
       height: Number(legacy.canvasHeight ?? 900),
     },
     motionBeatMs: Number(legacy.motionBeatMs ?? 600),
+    motion: DEFAULT_MOTION,
     palette: legacy.palette,
     history: legacy.history ?? { canUndo: false, canRedo: false },
     assets: legacy.assets ?? [],
     elements: [...identities.values()],
     slides,
-    transitions: (legacy.transitions ?? []).map((transition: Record<string, any>) => ({
-      ...transition,
-      fromSlideId: canonicalId(String(transition.fromSlideId)),
-      toSlideId: canonicalId(String(transition.toSlideId)),
-      ...(transition.overrides
-        ? { overrides: transition.overrides.map((override: Record<string, any>) => ({
-            ...override,
-            elementId: canonicalId(String(override.elementId)),
-          })) }
-        : {}),
-      ...(transition.elementMotions
-        ? { elementMotions: transition.elementMotions.map((motion: Record<string, any>) => ({
-            ...motion,
-            elementId: canonicalId(String(motion.elementId)),
-          })) }
-        : {}),
-    })),
   } as unknown as DeksDocument;
 
   assertDeksDocument(document);

@@ -47,7 +47,8 @@ export const DEKS_COMMAND_TYPES = Object.freeze([
   "add-element-state",
   "update-element-state",
   "remove-element-state",
-  "set-transition",
+  "set-motion",
+  "clear-motion",
 ]);
 const DEKS_COMMAND_TYPE_SET = new Set(DEKS_COMMAND_TYPES);
 

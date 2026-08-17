@@ -13,6 +13,11 @@ const document = {
   revision: 1,
   canvas: { width: 1600, height: 900 },
   motionBeatMs: 600,
+  motion: {
+    in: { animation: { kind: "fade" }, durationBeats: 1, delayMs: 0, easing: "ease-out" },
+    out: { animation: { kind: "fade" }, durationBeats: 1, delayMs: 0, easing: "ease-in" },
+    morph: { animation: { kind: "morph" }, durationBeats: 1, delayMs: 0, easing: "ease-in-out" },
+  },
   palette: {
     primary: "#111111", secondary: "#222222", accent: "#ff6600",
     background: "#ffffff", text: "#111111", subtext: "#555555",
@@ -23,8 +28,6 @@ const document = {
   slides: [{
     id: "slide-1", name: "Rendered", isTemplate: false,
     background: { kind: "solid", color: "#ffffff" },
-    inPreset: "fade", outPreset: "fade",
-    inDurationMultiplier: 1, outDurationMultiplier: 1,
     states: [{
       elementId: "headline",
       x: 100, y: 100, width: 800, height: 160,
@@ -35,7 +38,6 @@ const document = {
       overflowMode: "hidden", fill: "#111111",
     }],
   }],
-  transitions: [],
 };
 
 test("Desktop visual QA produces a real settled PNG and DOM measurements", async () => {

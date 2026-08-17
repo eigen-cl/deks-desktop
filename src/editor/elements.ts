@@ -187,10 +187,6 @@ export function createSlide(document: DeksDocument, name: string): DeksSlide {
     name,
     isTemplate: false,
     background: { kind: "solid", color: document.palette.background },
-    inPreset: "fade",
-    outPreset: "fade",
-    inDurationMultiplier: 1,
-    outDurationMultiplier: 1,
     states: [],
   };
 }

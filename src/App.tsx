@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DeksEditor } from "@deks-js/react";
-import type { DeksCommand, DeksDocument, DeksEditorChange } from "@deks-js/document";
-import { ArrowUpCircle, Bot, Download, Radio, X } from "lucide-react";
+import type { DeksDocument } from "@deks-js/document";
+import { ArrowUpCircle, Bot, Download, X } from "lucide-react";
 import {
   addSourceFolder,
   chooseDirectory,
@@ -17,6 +16,7 @@ import {
   setLocale as persistLocale,
   watchProject,
 } from "./desktop-api";
+import { Editor } from "./editor/Editor";
 import { Home } from "./Home";
 import {
   PRESENTATION_SIZES,
@@ -29,59 +29,6 @@ import {
 import { DEFAULT_LOCALE, resolveLocale, translator, type Locale, type TranslationKey } from "./i18n";
 import { checkForUpdate, installUpdate, type UpdateState } from "./updates";
 import type { Update } from "@tauri-apps/plugin-updater";
-
-/**
- * Deriva los IDs tocados por un cambio del editor. `operation` es un comando
- * canónico o un lote: una transacción confirma varias operaciones en una sola
- * revisión, así que el recibo debe reunir los IDs de todas.
- */
-function changedIds(change: DeksEditorChange): { slides: string[]; elements: string[] } {
-  const operations: readonly DeksCommand[] = Array.isArray(change.operation)
-    ? change.operation
-    : [change.operation as DeksCommand];
-  const slides = new Set<string>();
-  const elements = new Set<string>();
-
-  for (const operation of operations) {
-    switch (operation.type) {
-      case "create-slide":
-        slides.add(operation.slide.id);
-        break;
-      case "update-slide":
-      case "delete-slide":
-        slides.add(operation.slideId);
-        break;
-      case "reorder-slides":
-        for (const slideId of operation.slideIds) slides.add(slideId);
-        break;
-      case "add-element-state":
-        slides.add(operation.slideId);
-        elements.add(operation.state.elementId);
-        break;
-      case "update-element-state":
-      case "remove-element-state":
-        slides.add(operation.slideId);
-        elements.add(operation.elementId);
-        break;
-      case "define-element":
-        elements.add(operation.element.id);
-        break;
-      case "update-element-identity":
-      case "delete-element":
-        elements.add(operation.elementId);
-        break;
-      case "set-transition":
-        slides.add(operation.fromSlideId);
-        slides.add(operation.toSlideId);
-        break;
-      default:
-        // `update-document`, `define-asset` y `remove-asset` no tocan una slide
-        // ni una identidad concreta: el recibo queda sin IDs por diseño.
-        break;
-    }
-  }
-  return { slides: [...slides], elements: [...elements] };
-}
 
 export function App() {
   const [project, setProject] = useState<OpenProject>();
@@ -276,13 +223,6 @@ export function App() {
     }
   };
 
-  const extraControls = useMemo(() => (
-    <div className="live-state" role="status">
-      <Radio aria-hidden="true" size={16} />
-      {status}
-    </div>
-  ), [status]);
-
   const updateBanner = (update.status === "available" || update.status === "downloading" || update.status === "ready")
     ? (
       <aside className="update-banner" role="status">
@@ -339,21 +279,31 @@ export function App() {
     );
   }
 
-  const save = async (change: DeksEditorChange): Promise<{ document: DeksDocument }> => {
-    const ids = changedIds(change);
-    setStatusKey("status.saving");
-    setErrorKey(undefined);
-    try {
-      const saved = await saveProject(project.path, change.previousDocument.revision, change.document, ids.slides, ids.elements);
-      setProject(saved);
-      setStatusKey("status.saved");
-      return { document: saved.document };
-    } catch (caught) {
-      const conflict = String(caught).includes("revision_conflict");
-      setStatusKey(conflict ? "status.staleRevision" : "status.saveFailed");
-      setErrorKey(conflict ? "error.conflict" : "error.write");
-      throw caught;
-    }
+  /**
+   * El editor produce el documento ya aplicado por los comandos de Core y los
+   * IDs que tocó; aquí sólo se confirma en disco con la revisión esperada.
+   */
+  const persistence = {
+    save: async (
+      previousRevision: number,
+      next: DeksDocument,
+      changedSlideIds: string[],
+      changedElementIds: string[],
+    ) => {
+      setStatusKey("status.saving");
+      setErrorKey(undefined);
+      try {
+        const saved = await saveProject(project.path, previousRevision, next, changedSlideIds, changedElementIds);
+        setProject(saved);
+        setStatusKey("status.saved");
+        return saved.document;
+      } catch (caught) {
+        const conflict = String(caught).includes("revision_conflict");
+        setStatusKey(conflict ? "status.staleRevision" : "status.saveFailed");
+        setErrorKey(conflict ? "error.conflict" : "error.write");
+        throw caught;
+      }
+    },
   };
 
   return (
@@ -367,10 +317,11 @@ export function App() {
         </aside>
       )}
       {error && <aside className="workspace-error" role="alert">{error}</aside>}
-      <DeksEditor
-        document={project.document}
-        onChange={save}
-        extraControls={extraControls}
+      <Editor
+        t={t}
+        source={project.document}
+        persistence={persistence}
+        status={status}
         onExit={() => {
           setProject(undefined);
           setActivity(undefined);

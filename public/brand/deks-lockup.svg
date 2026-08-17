@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="169.2" height="35" viewBox="0 0 169.2 35" role="img" aria-labelledby="title desc">
+  <title id="title">DEKS</title>
+  <desc id="desc">La palabra DEKS junto a tres marcos que cambian de proporción.</desc>
+  <g>
+    <rect x="1.5" y="1.5" width="14" height="32" rx="3" fill="none" stroke="#73A7FF" stroke-width="3"/>
+    <rect x="6.5" y="5.5" width="24" height="24" rx="4" fill="none" stroke="#969DA6" stroke-width="3"/>
+    <rect x="3.5" y="9.5" width="32" height="16" rx="4" fill="none" stroke="#FF7043" stroke-width="3"/>
+  </g>
+  <g transform="translate(62.5 3.5)" fill="none" stroke="#F2F1EC" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M2 2V26H9C16 26 20 21 20 14S16 2 9 2H2Z"/>
+    <path d="M32 2V26M32 2H48M32 14H46M32 26H48"/>
+    <path d="M60 2V26M78 2L60 16M66 11L80 26"/>
+    <path d="M105 5C102 2.5 98 2 94 2C89 2 86 4.5 86 8C86 12 89 13.5 95 14.5C102 15.5 105 17 105 21C105 24.5 101 26 96 26C92 26 88 25 85 22.5"/>
+  </g>
+</svg>

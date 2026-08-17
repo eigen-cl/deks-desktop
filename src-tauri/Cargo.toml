@@ -12,7 +12,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
 default = ["desktop"]
-desktop = ["dep:notify", "dep:tauri", "dep:tauri-plugin-dialog", "tauri/wry"]
+desktop = ["dep:notify", "dep:tauri", "dep:tauri-plugin-dialog", "dep:tauri-plugin-updater", "dep:tauri-plugin-process", "tauri/wry"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -23,4 +23,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", optional = true, default-features = false, features = [] }
 tauri-plugin-dialog = { version = "2", optional = true }
+# La actualización verifica una firma con la clave pública declarada en
+# `tauri.conf.json`; `process` permite reiniciar la app tras instalarla.
+tauri-plugin-updater = { version = "2", optional = true }
+tauri-plugin-process = { version = "2", optional = true }
 tempfile = "3"

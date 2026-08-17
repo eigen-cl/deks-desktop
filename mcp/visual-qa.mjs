@@ -1,4 +1,3 @@
-import { toDeksV1Document } from "@deks-js/document";
 import { PreviewRenderer, previewSha256 } from "@deks-js/render-preview";
 
 const PREVIEW_WIDTHS = new Set([1280, 1600]);
@@ -16,8 +15,8 @@ function serializeMeasurement(measurement) {
 
 function isOutsideCanvas(rect, document) {
   return rect.x < 0 || rect.y < 0
-    || rect.x + rect.width > document.canvasWidth
-    || rect.y + rect.height > document.canvasHeight;
+    || rect.x + rect.width > document.canvas.width
+    || rect.y + rect.height > document.canvas.height;
 }
 
 function prepareDocument(document, slideId) {
@@ -26,15 +25,19 @@ function prepareDocument(document, slideId) {
   const unresolvedAssets = [];
   const previewDocument = structuredClone(document);
   const previewSlide = previewDocument.slides.find(({ id }) => id === slideId);
-  previewSlide.elements = previewSlide.elements.flatMap((element) => {
-    if (element.kind !== "image" || (!element.assetId && !element.assetUrl && !element.src)) return element;
+  // El contrato canónico separa identidad de checkpoint: el tipo del elemento
+  // vive en `document.elements` y su geometría en `slide.states`.
+  const identities = new Map(previewDocument.elements.map((element) => [element.id, element]));
+  previewSlide.states = previewSlide.states.flatMap((state) => {
+    const identity = identities.get(state.elementId);
+    if (identity?.kind !== "image" || !state.assetId) return state;
     unresolvedAssets.push({
       code: "asset_unresolved",
       severity: "warning",
       slide_id: slideId,
-      element_ids: [element.id],
-      bounds: { x: element.x, y: element.y, width: element.width, height: element.height },
-      asset_id: element.assetId ?? null,
+      element_ids: [state.elementId],
+      bounds: { x: state.x, y: state.y, width: state.width, height: state.height },
+      asset_id: state.assetId ?? null,
       message: "Desktop preview did not receive safe raster bytes for this image; it was omitted.",
     });
     return [];
@@ -61,7 +64,9 @@ export class VisualQaService {
     let result;
     try {
       result = await this.renderer.render({
-        document: toDeksV1Document(previewDocument),
+        // `render-preview` 1.0 recibe el documento canónico directamente: ya no
+        // existe un formato intermedio que degradar antes de renderizar.
+        document: previewDocument,
         slideId,
         width,
         assets: {},
@@ -101,7 +106,7 @@ export class VisualQaService {
         slide_id: slideId,
         slide_index: slideIndex,
         slide_name: slide.name,
-        canvas: { width: document.canvasWidth, height: document.canvasHeight },
+        canvas: { ...document.canvas },
         render: { width: result.width, height: result.height, device_scale_factor: 1 },
         byte_size: result.png.byteLength,
         sha256: previewSha256(result.png),

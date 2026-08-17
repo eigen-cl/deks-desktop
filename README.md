@@ -13,7 +13,9 @@ same presentation folder and see confirmed revisions appear in the editor withou
 - Watch the canonical document and rebase the open editor after an external/MCP revision.
 - Run a local stdio MCP with `list_presentations`, `get_presentation`, read-only
   `render_slide_preview` and transactional `apply_commands`.
-- Keep all runtime behavior local; there is no authentication, telemetry or network client.
+- Check for a signed update on launch, without blocking local work.
+- Keep all runtime behavior local; there is no authentication or telemetry. The only outbound
+  request is the explicit update check, and it can fail without affecting anything else.
 
 The initial portable editor intentionally exposes fewer inspectors than the mature editor in
 `deks-web`. Desktop composes published Core packages and gains features as those packages reach
@@ -146,6 +148,35 @@ call `list_presentations`, then call `render_slide_preview` once for each return
 example currently references `/brand/deks-lockup.svg`; because Desktop has no asset ingestion yet,
 the QA tool safely omits that image and reports `asset_unresolved` instead of resolving a path or
 making a network request.
+
+## Update channel
+
+Desktop checks for a newer release on launch and offers it in a dismissible banner. Downloading is
+always a decision of the person using the app, never a side effect of checking. `tauri-plugin-updater`
+verifies the signature in Rust before installing, so an unsigned or tampered artifact is rejected even
+if the manifest announces it.
+
+Two manifests coexist and are not interchangeable:
+
+- `latest.json` describes installers for a person choosing a download.
+- `updater.json` describes signed update artifacts for the app, one entry per platform.
+
+The channel stays off until its key pair exists, so a release without secrets still publishes
+installers instead of announcing an update nobody can install. To turn it on, once:
+
+```bash
+npm run tauri -- signer generate -w ~/.deks/desktop-updater.key
+```
+
+Then store the private key as the `TAURI_SIGNING_PRIVATE_KEY` secret (plus
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` if you set one), the public key as `TAURI_UPDATER_PUBKEY`, and
+set the `DESKTOP_UPDATER_READY` repository variable to `true`. Keep the private key backed up: losing
+it means existing installations can no longer verify a new release, and every user has to reinstall
+by hand.
+
+`src-tauri/tauri.conf.json` declares the endpoint; `src-tauri/tauri.updater.conf.json` is the overlay
+CI merges to inject the real public key and request signed artifacts. `npm run release:validate`
+fails if those two drift apart or if the placeholder key ever reaches the base config.
 
 ## Assets
 

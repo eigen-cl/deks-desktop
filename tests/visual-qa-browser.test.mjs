@@ -7,24 +7,26 @@ import test from "node:test";
 import { VisualQaService } from "../mcp/visual-qa.mjs";
 
 const document = {
+  format: "deks",
   id: "browser-preview",
   name: "Browser preview",
   revision: 1,
-  canvasWidth: 1600,
-  canvasHeight: 900,
+  canvas: { width: 1600, height: 900 },
   motionBeatMs: 600,
   palette: {
     primary: "#111111", secondary: "#222222", accent: "#ff6600",
     background: "#ffffff", text: "#111111", subtext: "#555555",
   },
   history: { canUndo: false, canRedo: false },
+  assets: [],
+  elements: [{ id: "headline", kind: "text", name: "Headline", isLocked: false }],
   slides: [{
     id: "slide-1", name: "Rendered", isTemplate: false,
     background: { kind: "solid", color: "#ffffff" },
     inPreset: "fade", outPreset: "fade",
     inDurationMultiplier: 1, outDurationMultiplier: 1,
-    elements: [{
-      id: "headline", kind: "text", name: "Headline",
+    states: [{
+      elementId: "headline",
       x: 100, y: 100, width: 800, height: 160,
       rotationDeg: 0, opacity: 1, zIndex: 1,
       content: "Rendered by DEKS Core", fontFamily: "Poppins", fontSize: 48,

@@ -6,16 +6,18 @@ import test from "node:test";
 import { ProjectStore } from "../mcp/project-store.mjs";
 
 const document = {
+  format: "deks",
   id: "presentation-1",
   name: "Agent demo",
   revision: 0,
-  canvasWidth: 1600,
-  canvasHeight: 900,
+  canvas: { width: 1600, height: 900 },
   motionBeatMs: 600,
   palette: { primary: "#111111", secondary: "#222222", accent: "#ff6600", background: "#ffffff", text: "#111111", subtext: "#555555" },
   history: { canUndo: false, canRedo: false },
+  assets: [],
+  elements: [],
   slides: [{
-    id: "presentation-1:slide:1",
+    id: "presentation-1.slide.1",
     name: "Inicio",
     isTemplate: false,
     background: { kind: "solid", color: "#ffffff" },
@@ -23,7 +25,7 @@ const document = {
     outPreset: "fade",
     inDurationMultiplier: 1,
     outDurationMultiplier: 1,
-    elements: [],
+    states: [],
   }],
   transitions: [],
 };
@@ -43,7 +45,7 @@ test("a command batch is one revision and one observable agent receipt", async (
     presentationId: document.id,
     expectedRevision: 0,
     idempotencyKey: "test-batch-1",
-    commands: [{ type: "update-presentation", patch: { name: "Built by an agent" } }],
+    commands: [{ type: "update-document", patch: { name: "Built by an agent" } }],
   });
 
   assert.equal(result.revision, 1);
@@ -58,7 +60,7 @@ test("the same idempotency key never applies twice", async () => {
     presentationId: document.id,
     expectedRevision: 0,
     idempotencyKey: "test-batch-repeat",
-    commands: [{ type: "update-presentation", patch: { name: "Once" } }],
+    commands: [{ type: "update-document", patch: { name: "Once" } }],
   };
   const first = await store.applyCommands(input);
   const replay = await store.applyCommands(input);
@@ -73,7 +75,7 @@ test("an idempotency key cannot hide a different command", async () => {
     presentationId: document.id,
     expectedRevision: 0,
     idempotencyKey: "test-key-reuse",
-    commands: [{ type: "update-presentation", patch: { name: "First" } }],
+    commands: [{ type: "update-document", patch: { name: "First" } }],
   });
 
   await assert.rejects(
@@ -81,7 +83,7 @@ test("an idempotency key cannot hide a different command", async () => {
       presentationId: document.id,
       expectedRevision: 1,
       idempotencyKey: "test-key-reuse",
-      commands: [{ type: "update-presentation", patch: { name: "Different" } }],
+      commands: [{ type: "update-document", patch: { name: "Different" } }],
     }),
     /idempotency_key_reused/,
   );
@@ -94,7 +96,7 @@ test("a stale writer receives revision_conflict", async () => {
       presentationId: document.id,
       expectedRevision: 9,
       idempotencyKey: "test-stale-writer",
-      commands: [{ type: "update-presentation", patch: { name: "Stale" } }],
+      commands: [{ type: "update-document", patch: { name: "Stale" } }],
     }),
     /revision_conflict/,
   );
@@ -108,7 +110,7 @@ test("a failing command rolls back the complete batch", async () => {
       expectedRevision: 0,
       idempotencyKey: "test-atomic-failure",
       commands: [
-        { type: "update-presentation", patch: { name: "Must roll back" } },
+        { type: "update-document", patch: { name: "Must roll back" } },
         { type: "unsupported-command" },
       ],
     }),

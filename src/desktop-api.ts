@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { DeksDocument } from "@deks-js/document";
+import { toCanonicalDocument } from "./legacy-document";
 import type { OpenProject, ProjectChanged } from "./model";
 
 export async function chooseDirectory(title: string): Promise<string | undefined> {
@@ -10,11 +11,17 @@ export async function chooseDirectory(title: string): Promise<string | undefined
 }
 
 export function createProject(parentPath: string, name: string, document: DeksDocument): Promise<OpenProject> {
-  return invoke("create_project", { parentPath, name, document });
+  return invoke<OpenProject>("create_project", { parentPath, name, document }).then(canonical);
 }
 
 export function openProject(path: string): Promise<OpenProject> {
-  return invoke("open_project", { path });
+  // Una carpeta escrita por una versión anterior sigue siendo del usuario: se
+  // migra al contrato canónico al abrirla, no se rechaza.
+  return invoke<OpenProject>("open_project", { path }).then(canonical);
+}
+
+function canonical(project: OpenProject): OpenProject {
+  return { ...project, document: toCanonicalDocument(project.document) };
 }
 
 export function saveProject(
@@ -24,13 +31,13 @@ export function saveProject(
   changedSlideIds: string[],
   changedElementIds: string[],
 ): Promise<OpenProject> {
-  return invoke("save_project", {
+  return invoke<OpenProject>("save_project", {
     path,
     expectedRevision,
     document,
     changedSlideIds,
     changedElementIds,
-  });
+  }).then(canonical);
 }
 
 export function watchProject(path: string): Promise<void> {

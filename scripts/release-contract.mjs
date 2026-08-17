@@ -52,6 +52,29 @@ export async function verifyBundledSkills(root) {
   return { source: manifest.source, skills, files: declared };
 }
 
+const UPDATER_ENDPOINT = "https://github.com/eigen-cl/deks-desktop/releases/latest/download/updater.json";
+const UPDATER_PUBKEY_PLACEHOLDER = "REPLACE_WITH_TAURI_UPDATER_PUBLIC_KEY";
+
+/**
+ * El canal de actualización vive en dos archivos: la configuración base declara
+ * el endpoint, y una superposición aporta la clave pública real y los artefactos
+ * firmados sólo cuando CI tiene el secreto. Ambos deben apuntar al mismo lugar,
+ * y el marcador de la clave nunca puede quedar activo en la base.
+ */
+export async function assertUpdateChannel(repositoryRoot, tauri) {
+  const overlay = JSON.parse(
+    await readFile(join(repositoryRoot, "src-tauri/tauri.updater.conf.json"), "utf8"),
+  );
+  if (tauri.plugins?.updater?.endpoints?.[0] !== UPDATER_ENDPOINT) throw new Error("updater_endpoint_invalid");
+  if (overlay.plugins?.updater?.endpoints?.[0] !== UPDATER_ENDPOINT) throw new Error("updater_endpoint_mismatch");
+  if (overlay.bundle?.createUpdaterArtifacts !== true) throw new Error("updater_artifacts_disabled");
+  // Firmar en cada build sin clave rompería un release; el artefacto firmado es
+  // exclusivo de la superposición.
+  if (tauri.bundle?.createUpdaterArtifacts !== undefined) throw new Error("updater_artifacts_in_base_config");
+  if (tauri.plugins?.updater?.pubkey === UPDATER_PUBKEY_PLACEHOLDER) throw new Error("updater_placeholder_in_base_config");
+  if (overlay.plugins?.updater?.pubkey !== UPDATER_PUBKEY_PLACEHOLDER) throw new Error("updater_overlay_pubkey_committed");
+}
+
 export async function assertReleaseContract(root, tag) {
   const repositoryRoot = rootPath(root);
   const version = parseStableTag(tag);
@@ -68,6 +91,7 @@ export async function assertReleaseContract(root, tag) {
   for (const icon of expectedIcons) {
     if (!(await lstat(join(repositoryRoot, "src-tauri", icon))).isFile()) throw new Error(`native_icon_missing:${icon}`);
   }
+  await assertUpdateChannel(repositoryRoot, tauri);
   const iconDigest = createHash("sha256").update(await readFile(join(repositoryRoot, "src-tauri/icons/icon.png"))).digest("hex");
   if (iconDigest !== CANONICAL_ICON_SHA256) throw new Error("canonical_icon_mismatch");
   await verifyBundledSkills(repositoryRoot);

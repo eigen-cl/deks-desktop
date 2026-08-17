@@ -5,15 +5,25 @@ import { applyDeksCommand, assertDeksDocument } from "@deks-js/document";
 
 const DOCUMENT_FILE = "document.deks.json";
 const LOCK_FILE = "project.lock";
+/**
+ * Vocabulario canónico de `@deks-js/document`. El contrato 1.0 separa identidad
+ * de checkpoint, así que un elemento se define una vez (`define-element`) y su
+ * geometría vive por slide (`add-element-state` / `update-element-state`).
+ */
 export const DEKS_COMMAND_TYPES = Object.freeze([
-  "update-presentation",
+  "update-document",
+  "define-asset",
+  "remove-asset",
+  "define-element",
+  "update-element-identity",
+  "delete-element",
   "create-slide",
   "update-slide",
   "reorder-slides",
   "delete-slide",
-  "create-element",
-  "update-element",
-  "delete-element",
+  "add-element-state",
+  "update-element-state",
+  "remove-element-state",
   "set-transition",
 ]);
 const DEKS_COMMAND_TYPE_SET = new Set(DEKS_COMMAND_TYPES);
@@ -67,6 +77,10 @@ function touchedIds(commands) {
     if (command.toSlideId) slideIds.add(command.toSlideId);
     if (command.elementId) elementIds.add(command.elementId);
     if (command.element?.id) elementIds.add(command.element.id);
+    // Formas propias del contrato canónico: un checkpoint lleva el elemento
+    // dentro de `state`, y reordenar toca varias slides a la vez.
+    if (command.state?.elementId) elementIds.add(command.state.elementId);
+    if (Array.isArray(command.slideIds)) for (const id of command.slideIds) slideIds.add(id);
   }
   return { slideIds: [...slideIds], elementIds: [...elementIds] };
 }
@@ -154,7 +168,9 @@ export class ProjectStore {
         if (!command || typeof command !== "object" || !DEKS_COMMAND_TYPE_SET.has(command.type)) {
           throw new Error("unsupported_command");
         }
-        next = applyDeksCommand(next, command);
+        // `applyDeksCommand` devuelve `{ document, changeSet }` en el contrato
+        // canónico: el documento es una propiedad del resultado, no el resultado.
+        next = applyDeksCommand(next, command).document;
       }
       next = { ...next, revision: expectedRevision + 1 };
       assertDeksDocument(next);

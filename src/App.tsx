@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DeksEditor } from "@deks-js/react";
-import type { DeksDocument, DeksEditorChange } from "@deks-js/document";
-import { Bot, Check, FolderOpen, PackagePlus, Plus, Radio, X } from "lucide-react";
+import type { DeksCommand, DeksDocument, DeksEditorChange } from "@deks-js/document";
+import { ArrowUpCircle, Bot, Check, Download, FolderOpen, PackagePlus, Plus, Radio, X } from "lucide-react";
 import {
   chooseDirectory,
   createProject,
@@ -13,18 +13,60 @@ import {
   watchProject,
 } from "./desktop-api";
 import { createPresentation, type OpenProject, type ProjectChanged } from "./model";
+import { checkForUpdate, installUpdate, type UpdateState } from "./updates";
+import type { Update } from "@tauri-apps/plugin-updater";
 
+/**
+ * Deriva los IDs tocados por un cambio del editor. `operation` es un comando
+ * canónico o un lote: una transacción confirma varias operaciones en una sola
+ * revisión, así que el recibo debe reunir los IDs de todas.
+ */
 function changedIds(change: DeksEditorChange): { slides: string[]; elements: string[] } {
-  const operation = change.operation;
-  if ("slideId" in operation) {
-    return {
-      slides: [operation.slideId],
-      elements: "elementId" in operation ? [operation.elementId] : "element" in operation ? [operation.element.id] : [],
-    };
+  const operations: readonly DeksCommand[] = Array.isArray(change.operation)
+    ? change.operation
+    : [change.operation as DeksCommand];
+  const slides = new Set<string>();
+  const elements = new Set<string>();
+
+  for (const operation of operations) {
+    switch (operation.type) {
+      case "create-slide":
+        slides.add(operation.slide.id);
+        break;
+      case "update-slide":
+      case "delete-slide":
+        slides.add(operation.slideId);
+        break;
+      case "reorder-slides":
+        for (const slideId of operation.slideIds) slides.add(slideId);
+        break;
+      case "add-element-state":
+        slides.add(operation.slideId);
+        elements.add(operation.state.elementId);
+        break;
+      case "update-element-state":
+      case "remove-element-state":
+        slides.add(operation.slideId);
+        elements.add(operation.elementId);
+        break;
+      case "define-element":
+        elements.add(operation.element.id);
+        break;
+      case "update-element-identity":
+      case "delete-element":
+        elements.add(operation.elementId);
+        break;
+      case "set-transition":
+        slides.add(operation.fromSlideId);
+        slides.add(operation.toSlideId);
+        break;
+      default:
+        // `update-document`, `define-asset` y `remove-asset` no tocan una slide
+        // ni una identidad concreta: el recibo queda sin IDs por diseño.
+        break;
+    }
   }
-  if (operation.type === "create-slide") return { slides: [operation.slide.id], elements: [] };
-  if (operation.type === "set-transition") return { slides: [operation.fromSlideId, operation.toSlideId], elements: [] };
-  return { slides: [], elements: [] };
+  return { slides: [...slides], elements: [...elements] };
 }
 
 export function App() {
@@ -35,6 +77,8 @@ export function App() {
   const [error, setError] = useState<string>();
   const [choosingFolder, setChoosingFolder] = useState(false);
   const [agentSetupStatus, setAgentSetupStatus] = useState<string>();
+  const [update, setUpdate] = useState<UpdateState>({ status: "idle" });
+  const pendingUpdate = useRef<Update>();
   const currentRef = useRef<OpenProject>();
   currentRef.current = project;
 
@@ -55,6 +99,25 @@ export function App() {
     });
     return () => { void unlisten.then((stop) => stop()).catch(() => undefined); };
   }, []);
+
+  useEffect(() => {
+    // Una comprobación al abrir, sin bloquear nada: si falla, la app local sigue
+    // funcionando igual.
+    let cancelled = false;
+    setUpdate({ status: "checking" });
+    void checkForUpdate().then((result) => {
+      if (cancelled) return;
+      pendingUpdate.current = result.update;
+      setUpdate(result.state);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const applyUpdate = async () => {
+    const available = pendingUpdate.current;
+    if (!available) return;
+    await installUpdate(available, setUpdate);
+  };
 
   const openExisting = async () => {
     setChoosingFolder(true);
@@ -131,13 +194,45 @@ export function App() {
     </div>
   ), [status]);
 
+  const updateBanner = (update.status === "available" || update.status === "downloading" || update.status === "ready")
+    ? (
+      <aside className="update-banner" role="status">
+        <ArrowUpCircle aria-hidden="true" />
+        <div>
+          <strong>
+            {update.status === "ready"
+              ? `DEKS Desktop ${update.version} está listo`
+              : `DEKS Desktop ${update.version} está disponible`}
+          </strong>
+          <span>
+            {update.status === "downloading"
+              ? `Descargando…${update.percent === undefined ? "" : ` ${update.percent}%`}`
+              : update.status === "ready"
+                ? "Se aplicará al reiniciar."
+                : "La descarga se verifica con la firma oficial antes de instalarse."}
+          </span>
+        </div>
+        {update.status === "available" && (
+          <button type="button" className="button button--primary" onClick={() => void applyUpdate()}>
+            <Download aria-hidden="true" /> Actualizar
+          </button>
+        )}
+        <button type="button" className="update-banner__dismiss" aria-label="Ocultar aviso de actualización" onClick={() => setUpdate({ status: "idle" })}>
+          <X aria-hidden="true" />
+        </button>
+      </aside>
+    )
+    : null;
+
   if (!project) {
     return (
       <main className="welcome">
+        {updateBanner}
         <section className="welcome__panel" aria-labelledby="welcome-title">
-          <div className="brand-mark" aria-hidden="true"><span /><span /><span /></div>
+          {/* Marca canónica del design system compartido, no una variante propia. */}
+          <div className="brand-mark"><img src="/brand/deks-lockup.svg" alt="DEKS" width={169} height={35} /></div>
           <p className="eyebrow">DEKS Desktop · Open Core</p>
-          <h1 id="welcome-title">Slides locales que tú y tus agentes pueden construir juntos.</h1>
+          <h1 id="welcome-title">Slides locales que tú y tus agentes construyen juntos.</h1>
           <p className="lede">Cada presentación vive en una carpeta legible. El editor y el MCP observan el mismo lenguaje DEKS, sin cuenta ni solicitudes de red.</p>
           <label className="project-name">
             Nombre de la presentación
@@ -190,6 +285,7 @@ export function App() {
 
   return (
     <main className="workspace">
+      {updateBanner}
       {activity?.origin === "agent" && (
         <aside className="agent-activity" role="status">
           <Bot aria-hidden="true" />

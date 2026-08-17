@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="37" height="35" viewBox="0 0 37 35" role="img" aria-labelledby="title desc">
+  <title id="title">DEKS</title>
+  <desc id="desc">Tres marcos cambian de proporción entre dos estados.</desc>
+  <rect x="1.5" y="1.5" width="14" height="32" rx="3" fill="none" stroke="#73A7FF" stroke-width="3"/>
+  <rect x="6.5" y="5.5" width="24" height="24" rx="4" fill="none" stroke="#969DA6" stroke-width="3"/>
+  <rect x="3.5" y="9.5" width="32" height="16" rx="4" fill="none" stroke="#FF7043" stroke-width="3"/>
+</svg>

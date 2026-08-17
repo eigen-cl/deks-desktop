@@ -3,17 +3,22 @@ import test from "node:test";
 import { VisualQaService } from "../mcp/visual-qa.mjs";
 
 const document = {
+  format: "deks",
   id: "presentation-1",
   name: "Visual QA",
   revision: 3,
-  canvasWidth: 1600,
-  canvasHeight: 900,
+  canvas: { width: 1600, height: 900 },
   motionBeatMs: 600,
   palette: {
     primary: "#111111", secondary: "#222222", accent: "#ff6600",
     background: "#ffffff", text: "#111111", subtext: "#555555",
   },
   history: { canUndo: false, canRedo: false },
+  assets: [{ id: "logo-asset", kind: "embedded", mediaType: "image/svg+xml" }],
+  elements: [
+    { id: "headline", kind: "text", name: "Headline", isLocked: false },
+    { id: "logo", kind: "image", name: "Logo", isLocked: false },
+  ],
   slides: [{
     id: "slide-1",
     name: "Overview",
@@ -23,17 +28,17 @@ const document = {
     outPreset: "fade",
     inDurationMultiplier: 1,
     outDurationMultiplier: 1,
-    elements: [{
-      id: "headline", kind: "text", name: "Headline",
+    states: [{
+      elementId: "headline",
       x: 80, y: 80, width: 600, height: 80, rotationDeg: 0, opacity: 1, zIndex: 1,
       content: "A long headline", fontFamily: "Poppins", fontSize: 48,
       fontWeight: 600, lineHeight: 1.1, letterSpacing: 0,
       horizontalAlignment: "left", verticalAlignment: "top", overflowMode: "hidden",
       fill: "#111111",
     }, {
-      id: "logo", kind: "image", name: "Logo",
+      elementId: "logo",
       x: 1420, y: 820, width: 240, height: 120, rotationDeg: 0, opacity: 1, zIndex: 2,
-      assetId: "logo-asset", assetUrl: "/brand/logo.svg", alt: "Logo", fit: "contain",
+      assetId: "logo-asset", alt: "Logo", fit: "contain",
     }],
   }],
   transitions: [],
@@ -68,7 +73,12 @@ test("visual QA renders one authorized presentation without resolving external a
   assert.equal(previewRequest.slideId, "slide-1");
   assert.equal(previewRequest.width, 1280);
   assert.deepEqual(previewRequest.assets, {});
-  assert.deepEqual(previewRequest.document.slides[0].elements.map(({ id }) => id), ["headline"]);
+  // La imagen sin bytes resueltos se omite del checkpoint enviado al renderer;
+  // la identidad sigue en el documento, que es donde vive.
+  assert.deepEqual(
+    previewRequest.document.slides[0].states.map(({ elementId }) => elementId),
+    ["headline"],
+  );
   assert.equal(result.png.toString(), "png-bytes");
   assert.deepEqual(result.report.issues.map(({ code, element_ids: elementIds }) => [code, elementIds]), [
     ["asset_unresolved", ["logo"]],

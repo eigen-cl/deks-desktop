@@ -1,4 +1,4 @@
-import type { DeksDocument } from "@deks-js/document";
+import { DeksPresentation, assertDeksDocument, type DeksDocument } from "@deks-js/document";
 
 export interface OpenProject {
   path: string;
@@ -13,36 +13,21 @@ export interface ProjectChanged {
   changedElementIds: string[];
 }
 
+/**
+ * Construye el documento inicial con el builder oficial en vez de un literal
+ * escrito a mano. Así la paleta, los presets y la forma canónica los define
+ * `@deks-js/document`, y Desktop no puede quedarse con un formato viejo cuando
+ * el contrato avanza.
+ */
 export function createPresentation(name: string, id: string = crypto.randomUUID()): DeksDocument {
-  return {
+  const presentation = new DeksPresentation({
     id,
     name,
-    revision: 0,
-    canvasWidth: 1600,
-    canvasHeight: 900,
+    canvas: { width: 1600, height: 900 },
     motionBeatMs: 600,
-    palette: {
-      primary: "#15171c",
-      secondary: "#2d3748",
-      accent: "#ff6b35",
-      background: "#f7f1e8",
-      text: "#15171c",
-      subtext: "#596273",
-    },
-    history: { canUndo: false, canRedo: false },
-    slides: [
-      {
-        id: `${id}:slide:${crypto.randomUUID()}`,
-        name: "Inicio",
-        isTemplate: false,
-        background: { kind: "solid", color: "#f7f1e8" },
-        inPreset: "fade",
-        outPreset: "fade",
-        inDurationMultiplier: 1,
-        outDurationMultiplier: 1,
-        elements: [],
-      },
-    ],
-    transitions: [],
-  };
+  });
+  presentation.addSlide({ name: "Inicio" });
+  const document = presentation.toDocument();
+  assertDeksDocument(document);
+  return document;
 }

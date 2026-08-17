@@ -113,7 +113,7 @@ Run the portable checks in Docker:
 ```bash
 docker compose run --rm desktop npm run verify
 docker compose run --rm rust cargo test --no-default-features
-docker compose run --rm -e GITHUB_REF_NAME=v0.2.1 desktop npm run release:validate
+docker compose run --rm -e GITHUB_REF_NAME=v0.4.0 desktop npm run release:validate
 ```
 
 For a native packaging smoke test, install the official Tauri prerequisites for that host OS, then

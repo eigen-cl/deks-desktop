@@ -6,7 +6,7 @@ same presentation folder and see confirmed revisions appear in the editor withou
 ## What works in the first vertical slice
 
 - Create or open a folder-backed DEKS presentation.
-- Edit through the portable `@deks-js/react` editor.
+- Edit through a Desktop-native editor that executes the canonical DEKS Core commands and renderer.
 - Compare `expectedRevision` before every write.
 - Replace `document.deks.json` atomically under an interoperable `project.lock`.
 - Keep assets and change receipts beside the document.
@@ -17,9 +17,9 @@ same presentation folder and see confirmed revisions appear in the editor withou
 - Keep all runtime behavior local; there is no authentication or telemetry. The only outbound
   request is the explicit update check, and it can fail without affecting anything else.
 
-The initial portable editor intentionally exposes fewer inspectors than the mature editor in
-`deks-web`. Desktop composes published Core packages and gains features as those packages reach
-parity; it never vendors the Web editor.
+Desktop and `deks-web` intentionally own different editor interfaces for their host environments.
+Both consume the published Core document, commands and renderer directly, so a presentation remains
+portable between them without sharing or vendoring either editor implementation.
 
 ## Project format
 
@@ -208,12 +208,11 @@ Core owns the discriminated asset contract. A script can supply memory bytes/`Bl
 the serialized v2 document keeps a stable asset reference. Renderer Core receives only the resolved
 render URL and never performs fetch, upload or filesystem work.
 
-The first Desktop source slice creates the `assets/` directory but does not yet expose an asset
-import UI or resolver. It consumes the exact published `@deks-js/document` 0.4,
-`@deks-js/react` 0.5 and `@deks-js/render-preview` 0.2 packages while the editor surface remains on
-the compatible v1 document API. Asset ingestion and the v2 host resolver are the next Desktop
-integration boundary. The source tree never uses a relative `file:` dependency or vendors a
-private copy of Core.
+Desktop consumes exact published `@deks-js/document`, `@deks-js/renderer-core` and
+`@deks-js/render-preview` packages. Its own editor writes only canonical Core commands, and its host
+resolver turns embedded project assets into short-lived `blob:` URLs that are revoked after use.
+The source tree never uses a relative `file:` dependency, vendors a private copy of Core or imports
+the Web editor.
 
 ## Repository boundary
 

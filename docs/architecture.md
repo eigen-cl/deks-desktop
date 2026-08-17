@@ -35,13 +35,17 @@ The watcher emits only after the canonical file changes. The frontend ignores du
 revisions, reloads the complete document and lets the editor reconcile active slide and selection by
 ID. Local events include the full document on reload because no network transfer is involved.
 
+## Editor ownership
+
+Desktop and Web own different editor implementations suited to their hosts. Desktop never vendors
+the Web editor; both execute the same released Core command and document contracts and use the Core
+renderer. That shared language, rather than a shared editor component, is the portability boundary.
+
 ## Assets
 
-In the Core v2 contract, serialized asset sources are either packaged references or HTTPS references. `Blob` and
-`Uint8Array` are facade inputs, not JSON values. A host-provided resolver converts a packaged asset
-to a short-lived `blob:` URL and is responsible for revoking it. Core never fetches a remote URL.
-The Desktop UI consumes the published Document 0.4 / React 0.5 packages through their v1
-compatibility surface and creates the local `assets/` directory. The local MCP composes the
-published render-preview worker for read-only PNG and DOM measurement QA; it does not duplicate the
-renderer. Asset ingestion and lifecycle resolution remain an explicit next host boundary, so an
-unresolved image is omitted with an explicit diagnostic rather than fetched or read from a path.
+Serialized asset sources are embedded project references or HTTPS references. Desktop imports an
+image into the project's `assets/` folder, records its Core descriptor and resolves it to a
+short-lived `blob:` URL that it revokes after use. Core never fetches a remote URL or reads a local
+path. The local MCP accepts image bytes instead of paths and composes the published render-preview
+worker for read-only PNG and DOM measurement QA; it does not duplicate the renderer. Missing bytes
+remain an explicit `asset_unresolved` diagnostic.

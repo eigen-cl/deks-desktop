@@ -164,7 +164,7 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npm run tauri -- build ${{ matrix.build_args }} $DEKS_TAURI_CONFIG
+        run: npm run tauri -- build ${{ matrix.build_args }} ${{ env.DEKS_TAURI_CONFIG }}
       - name: Verify macOS signature and notarization ticket
         if: runner.os == 'macOS'
         shell: bash
@@ -194,7 +194,7 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npm run tauri -- build ${{ matrix.build_args }} $DEKS_TAURI_CONFIG $DEKS_TAURI_CONFIG
+        run: npm run tauri -- build ${{ matrix.build_args }} ${{ env.DEKS_TAURI_CONFIG }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ matrix.artifact_name }}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Circle, Minus, Play, Radio, Square, Sparkles, Type } from "lucide-react";
+import { Circle, Image, Minus, Play, Radio, Redo2, Square, Sparkles, Type, Undo2 } from "lucide-react";
 import type { DeksCommand, DeksDocument } from "@deks-js/document";
 import { Canvas } from "./Canvas";
 import { Inspector } from "./Inspector";
@@ -7,12 +7,14 @@ import { Presenter } from "./Presenter";
 import { SlideRail } from "./SlideRail";
 import {
   createElement,
+  createImageElement,
   createSlide,
   duplicateSlide,
   editorElements,
   slideOf,
   type InsertableKind,
 } from "./elements";
+import { useAssetUrls } from "./useAssetUrls";
 import { useEditorDocument, type EditorPersistence } from "./useEditorDocument";
 import type { Translate } from "../i18n";
 
@@ -21,6 +23,9 @@ export interface EditorProps {
   source: DeksDocument;
   persistence: EditorPersistence;
   status: string;
+  /** Carpeta del proyecto: de ahí salen y ahí entran los assets. */
+  projectPath: string;
+  onImportAsset(): Promise<{ id: string; mediaType: string; originalFilename?: string } | undefined>;
   onExit(): void;
 }
 
@@ -32,8 +37,9 @@ const TOOLS: Array<{ kind: InsertableKind; icon: typeof Type; labelKey: "editor.
   { kind: "icon", icon: Sparkles, labelKey: "editor.addIcon" },
 ];
 
-export function Editor({ t, source, persistence, status, onExit }: EditorProps) {
-  const { document: deck, dispatch, pending, conflict } = useEditorDocument(source, persistence);
+export function Editor({ t, source, persistence, status, projectPath, onImportAsset, onExit }: EditorProps) {
+  const { document: deck, dispatch, pending, conflict, undo, redo, canUndo, canRedo } = useEditorDocument(source, persistence);
+  const assetUrls = useAssetUrls(deck, projectPath);
   const [activeSlideId, setActiveSlideId] = useState(deck.slides[0]?.id ?? "");
   const [selectedId, setSelectedId] = useState<string>();
   const [presenting, setPresenting] = useState(false);
@@ -45,6 +51,20 @@ export function Editor({ t, source, persistence, status, onExit }: EditorProps) 
     setActiveSlideId(deck.slides[0]?.id ?? "");
     setSelectedId(undefined);
   }, [activeSlideId, deck.slides]);
+
+  // Cmd/Ctrl+Z y su variante con Shift. Se ignoran dentro de un campo para no
+  // pisar el deshacer nativo de un texto que se está escribiendo.
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "z") return;
+      const target = event.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      event.preventDefault();
+      void (event.shiftKey ? redo() : undo());
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [redo, undo]);
 
   const slide = deck.slides.find(({ id }) => id === activeSlideId) ?? deck.slides[0];
   const selected = useMemo(
@@ -72,6 +92,23 @@ export function Editor({ t, source, persistence, status, onExit }: EditorProps) 
       .then((ok) => { if (ok) { setActiveSlideId(created.id); setSelectedId(undefined); } });
   };
 
+  /**
+   * La imagen se copia primero a la carpeta del proyecto y sólo entonces entra
+   * al documento: un descriptor que apuntara a bytes ausentes dejaría la
+   * presentación rota para cualquiera que la abriera después.
+   */
+  const insertImage = async () => {
+    const asset = await onImportAsset();
+    if (!asset) return;
+    const { element, state } = createImageElement(deck, slide.id, asset);
+    const ok = await dispatch([
+      { type: "define-asset", asset: { id: asset.id, kind: "embedded", mediaType: asset.mediaType, ...(asset.originalFilename ? { originalFilename: asset.originalFilename } : {}) } },
+      { type: "define-element", element },
+      { type: "add-element-state", slideId: slide.id, state },
+    ]);
+    if (ok) setSelectedId(element.id);
+  };
+
   const duplicate = () => {
     const copy = duplicateSlide(slideOf(deck, slide.id), t("editor.slideCopyName", { name: slide.name }));
     void dispatch({ type: "create-slide", slide: copy, afterSlideId: slide.id })
@@ -88,7 +125,18 @@ export function Editor({ t, source, persistence, status, onExit }: EditorProps) 
               <Icon aria-hidden="true" /> {t(labelKey)}
             </button>
           ))}
+          <button type="button" disabled={pending} onClick={() => void insertImage()}>
+            <Image aria-hidden="true" /> {t("editor.addImage")}
+          </button>
         </nav>
+        <div className="editor__history">
+          <button type="button" aria-label={t("editor.undo")} disabled={pending || !canUndo} onClick={() => void undo()}>
+            <Undo2 aria-hidden="true" />
+          </button>
+          <button type="button" aria-label={t("editor.redo")} disabled={pending || !canRedo} onClick={() => void redo()}>
+            <Redo2 aria-hidden="true" />
+          </button>
+        </div>
         <div className="editor__bar-end">
           <button type="button" className="button" onClick={() => setPresenting(true)}>
             <Play aria-hidden="true" /> {t("editor.present")}
@@ -120,6 +168,7 @@ export function Editor({ t, source, persistence, status, onExit }: EditorProps) 
           slideId={slide.id}
           selectedId={selectedId}
           disabled={pending}
+          assetUrls={assetUrls}
           onSelect={setSelectedId}
           onCommitGeometry={(elementId, patch) =>
             run({ type: "update-element-state", slideId: slide.id, elementId, patch })}

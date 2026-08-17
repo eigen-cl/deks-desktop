@@ -23,6 +23,7 @@ export function useEditorDocument(source: DeksDocument, persistence: EditorPersi
   const [document, setDocument] = useState(source);
   const [pending, setPending] = useState(false);
   const [conflict, setConflict] = useState(false);
+  const [history, setHistory] = useState<{ past: DeksDocument[]; future: DeksDocument[] }>({ past: [], future: [] });
   const inFlight = useRef(false);
   const known = useRef(source);
 
@@ -33,6 +34,9 @@ export function useEditorDocument(source: DeksDocument, persistence: EditorPersi
     known.current = source;
     setDocument(source);
     setConflict(false);
+    // Deshacer sobre una edición ajena reescribiría trabajo que no es de quien
+    // pulsa: el historial local deja de aplicar y se descarta.
+    setHistory({ past: [], future: [] });
   }, [source]);
 
   const dispatch = useCallback(async (
@@ -64,6 +68,10 @@ export function useEditorDocument(source: DeksDocument, persistence: EditorPersi
       setDocument(committed);
       known.current = committed;
       setConflict(false);
+      // Un comando, un paso: el historial guarda el documento anterior sólo
+      // cuando el disco ya confirmó el nuevo. Rehacer muere al editar, porque
+      // la rama que prometía dejó de existir.
+      setHistory(({ past }) => ({ past: [...past, previous], future: [] }));
       return true;
     } catch (caught) {
       setDocument(previous);
@@ -75,5 +83,50 @@ export function useEditorDocument(source: DeksDocument, persistence: EditorPersi
     }
   }, [document, persistence]);
 
-  return { document, dispatch, pending, conflict };
+  /**
+   * Deshacer y rehacer escriben el documento de destino como una revisión
+   * nueva; nunca retroceden el contador. La revisión es el reloj compartido con
+   * el watcher, el lock y los agentes: hacerla retroceder haría que una
+   * escritura ajena pareciera vieja y se perdiera.
+   */
+  const travel = useCallback(async (direction: "undo" | "redo"): Promise<boolean> => {
+    if (inFlight.current) return false;
+    const stack = direction === "undo" ? history.past : history.future;
+    const target = stack.at(-1);
+    if (!target) return false;
+
+    const current = document;
+    const next = { ...target, revision: current.revision + 1 };
+    inFlight.current = true;
+    setPending(true);
+    setDocument(next);
+    try {
+      const committed = await persistence.save(current.revision, next, [], []);
+      setDocument(committed);
+      known.current = committed;
+      setConflict(false);
+      setHistory(({ past, future }) => direction === "undo"
+        ? { past: past.slice(0, -1), future: [...future, current] }
+        : { past: [...past, current], future: future.slice(0, -1) });
+      return true;
+    } catch (caught) {
+      setDocument(current);
+      setConflict(String(caught).includes("revision_conflict"));
+      return false;
+    } finally {
+      inFlight.current = false;
+      setPending(false);
+    }
+  }, [document, history, persistence]);
+
+  return {
+    document,
+    dispatch,
+    pending,
+    conflict,
+    undo: () => travel("undo"),
+    redo: () => travel("redo"),
+    canUndo: history.past.length > 0,
+    canRedo: history.future.length > 0,
+  };
 }

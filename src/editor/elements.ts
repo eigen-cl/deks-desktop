@@ -14,6 +14,12 @@ export type EditorElement = DeksElement & Omit<DeksElementState, "elementId">;
 
 export type InsertableKind = "text" | "rectangle" | "ellipse" | "line" | "icon";
 
+export interface ImportedAsset {
+  id: string;
+  mediaType: string;
+  originalFilename?: string;
+}
+
 export const id = (prefix: string) =>
   `${prefix}-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
 
@@ -133,6 +139,43 @@ export function createElement(
       // y al subirlo aparece en el mismo tono del relleno en vez de en negro.
       stroke: document.palette.primary,
       strokeWidth: 0,
+    },
+  };
+}
+
+/**
+ * Una imagen entra como cualquier otro elemento: identidad, checkpoint y un
+ * `assetId` que apunta al descriptor. El encuadre nace `contain` para que nada
+ * se recorte antes de que alguien lo decida.
+ */
+export function createImageElement(
+  document: DeksDocument,
+  slideId: string,
+  asset: ImportedAsset,
+): { element: DeksElement; state: DeksElementState } {
+  const { width, height } = document.canvas;
+  const elementId = id("element");
+  const boxWidth = Math.round(width * 0.45);
+  const boxHeight = Math.round(height * 0.45);
+  return {
+    element: {
+      id: elementId,
+      kind: "image",
+      name: asset.originalFilename ?? "Imagen",
+      isLocked: false,
+    },
+    state: {
+      elementId,
+      x: Math.round((width - boxWidth) / 2),
+      y: Math.round((height - boxHeight) / 2),
+      width: boxWidth,
+      height: boxHeight,
+      rotationDeg: 0,
+      opacity: 1,
+      zIndex: nextZIndex(document, slideId),
+      assetId: asset.id,
+      alt: asset.originalFilename ?? "Imagen",
+      fit: "contain",
     },
   };
 }

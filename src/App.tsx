@@ -4,7 +4,9 @@ import { ArrowUpCircle, Bot, Download, X } from "lucide-react";
 import {
   addSourceFolder,
   chooseDirectory,
+  chooseImage,
   createProject,
+  importAsset,
   installBundledMcp,
   installBundledSkills,
   listProjects,
@@ -322,6 +324,17 @@ export function App() {
         source={project.document}
         persistence={persistence}
         status={status}
+        projectPath={project.path}
+        onImportAsset={async () => {
+          try {
+            const source = await chooseImage(t("editor.addImage"));
+            if (!source) return undefined;
+            return await importAsset(project.path, source);
+          } catch {
+            setErrorKey("error.asset");
+            return undefined;
+          }
+        }}
         onExit={() => {
           setProject(undefined);
           setActivity(undefined);

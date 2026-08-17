@@ -12,7 +12,7 @@ same presentation folder and see confirmed revisions appear in the editor withou
 - Keep assets and change receipts beside the document.
 - Watch the canonical document and rebase the open editor after an external/MCP revision.
 - Run a local stdio MCP with `list_presentations`, `get_presentation`, read-only
-  `render_slide_preview` and transactional `apply_commands`.
+  `render_slide_preview`, transactional `apply_commands` and `add_asset`.
 - Check for a signed update on launch, without blocking local work.
 - Keep all runtime behavior local; there is no authentication or telemetry. The only outbound
   request is the explicit update check, and it can fail without affecting anything else.
@@ -112,6 +112,26 @@ Mutation tools require both `expected_revision` and an `idempotency_key`. The se
 presentation by its document ID; tools never receive filesystem paths. It creates a receipt with
 `origin: "agent"`, which the Tauri watcher turns into visible activity.
 
+### Assets
+
+Images live beside the document, in the project's `assets/` folder, named `<assetId>.<ext>`. The
+extension is derived from the media type, so resolving an asset needs only the descriptor the
+document already carries — never an absolute path. That is what lets a project folder be moved,
+copied or zipped whole without breaking.
+
+The media type is always decided by the file's own bytes, never by its extension or by what a caller
+declares. A mislabelled file would enter the document with a lying `mediaType` and break wherever it
+was opened next.
+
+Desktop imports an image through the system file picker, which may point anywhere; the copy always
+lands inside the project. Agents use `add_asset`, which takes base64 bytes and no path at all —
+MCP only ever sees the authorized root, so accepting a path would hand it an arbitrary file reader.
+Both paths write the bytes before declaring the descriptor, and withdraw orphan bytes if the
+document rejects it, so a descriptor never points at a file that is not there.
+
+`add_asset` registers the asset and returns its id. Placing it on a slide is a separate
+`apply_commands` batch with `define-element` and `add-element-state` referencing that `assetId`.
+
 ### Visual QA
 
 `render_slide_preview` accepts one `presentation_id`, one `slide_id`, a recommended optional
@@ -122,6 +142,10 @@ DPR 1 with the canonical Core preview worker, blocks browser network access, and
 - revision, slide name/index, canvas and render dimensions, byte size and SHA-256;
 - Chromium DOM measurements for every element;
 - deterministic issues for text overflow, elements outside the canvas and unresolved assets.
+
+Embedded assets whose bytes exist are resolved from the project folder and rendered, so an agent can
+see the image it just added. Only an asset whose bytes are genuinely missing is omitted and reported
+as `asset_unresolved`.
 
 The tool is read-only: it does not change the document revision, acquire the write lock, create a
 receipt or accept paths, URLs or output commands. A result without deterministic overflow still
@@ -145,9 +169,9 @@ cp ../deks-web/apps/web/src/examples/decks/conoce-deks.deks.json \
 
 Open `$DEKS_PROJECTS_ROOT/conoce-deks` in the Desktop folder picker, or restart the local MCP and
 call `list_presentations`, then call `render_slide_preview` once for each returned slide ID. The
-example currently references `/brand/deks-lockup.svg`; because Desktop has no asset ingestion yet,
-the QA tool safely omits that image and reports `asset_unresolved` instead of resolving a path or
-making a network request.
+example references `/brand/deks-lockup.svg`, which no asset in the project declares; the QA tool
+omits that image and reports `asset_unresolved` instead of resolving a path or making a network
+request. Add the bytes with `add_asset` and point the element at the returned id to see it render.
 
 ## Update channel
 

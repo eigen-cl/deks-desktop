@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { DeksDocument } from "@deks-js/document";
 import { toCanonicalDocument } from "./legacy-document";
+import type { ImportedAsset } from "./editor/elements";
 import type { Locale } from "./i18n";
 import type { OpenProject, ProjectChanged, ProjectSummary, Workspace } from "./model";
 
@@ -76,4 +77,23 @@ export function installBundledMcp(destinationPath: string): Promise<string> {
 
 export function onProjectChanged(handler: (event: ProjectChanged) => void): Promise<UnlistenFn> {
   return listen<ProjectChanged>("deks://presentation-changed", ({ payload }) => handler(payload));
+}
+
+/** Copia un archivo del sistema dentro de la carpeta del proyecto. */
+export function importAsset(path: string, sourcePath: string): Promise<ImportedAsset> {
+  return invoke<ImportedAsset>("import_asset", { path, sourcePath });
+}
+
+export function readAsset(path: string, assetId: string, mediaType: string): Promise<number[]> {
+  return invoke<number[]>("read_asset", { path, assetId, mediaType });
+}
+
+export async function chooseImage(title: string): Promise<string | undefined> {
+  const selected = await open({
+    title,
+    multiple: false,
+    directory: false,
+    filters: [{ name: "Imagen", extensions: ["png", "jpg", "jpeg", "gif", "webp"] }],
+  });
+  return typeof selected === "string" ? selected : undefined;
 }

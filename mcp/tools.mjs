@@ -39,6 +39,23 @@ export const MCP_TOOLS = Object.freeze([
     annotations: READ_ONLY,
   },
   {
+    name: "add_asset",
+    description: "Register raster image bytes as an embedded asset of a local DEKS presentation and declare it in the document. Returns the asset id to reference from an image element via apply_commands. PNG, JPEG, GIF or WebP; the media type is decided by the bytes, not by what the caller declares.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["presentation_id", "expected_revision", "idempotency_key", "base64"],
+      properties: {
+        presentation_id: { type: "string", minLength: 1 },
+        expected_revision: { type: "integer", minimum: 0 },
+        idempotency_key: { type: "string", minLength: 8, maxLength: 200 },
+        base64: { type: "string", minLength: 1, description: "Raw image bytes, base64 encoded." },
+        original_filename: { type: "string", maxLength: 200 },
+      },
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  },
+  {
     name: "apply_commands",
     description: "Apply a validated batch of DEKS Core commands as one local revision.",
     inputSchema: {
@@ -94,6 +111,15 @@ export class McpToolRuntime {
         ],
         structuredContent: report,
       };
+    }
+    if (name === "add_asset") {
+      return textResult(await this.store.addAsset({
+        presentationId: args.presentation_id,
+        expectedRevision: args.expected_revision,
+        idempotencyKey: args.idempotency_key,
+        base64: args.base64,
+        originalFilename: args.original_filename,
+      }));
     }
     if (name === "apply_commands") {
       return textResult(await this.store.applyCommands({

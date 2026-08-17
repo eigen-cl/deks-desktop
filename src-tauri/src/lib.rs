@@ -20,6 +20,10 @@ const DOCUMENT_FILE: &str = "document.deks.json";
 const LOCK_FILE: &str = "project.lock";
 const SKILL_NAMES: [&str; 2] = ["deks-presentations", "design-deks-presentations"];
 const SETTINGS_FILE: &str = "settings.json";
+const ASSETS_DIR: &str = "assets";
+/// Techo por asset. Un documento local no debería arrastrar un archivo que la
+/// web luego no pueda abrir ni el `.deks` empaquetar con comodidad.
+const MAX_ASSET_BYTES: usize = 16 * 1024 * 1024;
 /// Carpeta por defecto dentro de Documentos. La app la crea sola: pedirle una
 /// ubicación a quien recién abre DEKS es pedirle una decisión antes de tener
 /// con qué decidir.
@@ -322,6 +326,68 @@ fn list_projects_in(roots: &[String]) -> Vec<ProjectSummary> {
     projects
 }
 
+/// El tipo se decide por los bytes, nunca por la extensión: un `.png` que en
+/// realidad es otra cosa entraría al documento con un `mediaType` mentiroso y
+/// rompería al abrirlo en otro host.
+fn sniff_media_type(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]) {
+        return Some("image/png");
+    }
+    if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        return Some("image/jpeg");
+    }
+    if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        return Some("image/gif");
+    }
+    if bytes.len() > 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
+        return Some("image/webp");
+    }
+    None
+}
+
+/// La extensión se deriva del tipo, así que resolver un asset sólo necesita el
+/// descriptor que ya vive en el documento, y la carpeta sigue siendo legible.
+fn asset_extension(media_type: &str) -> Option<&'static str> {
+    match media_type {
+        "image/png" => Some("png"),
+        "image/jpeg" => Some("jpg"),
+        "image/gif" => Some("gif"),
+        "image/webp" => Some("webp"),
+        _ => None,
+    }
+}
+
+fn asset_file(path: &Path, asset_id: &str, media_type: &str) -> Result<PathBuf, String> {
+    if asset_id.is_empty() || !asset_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Err("asset_id_invalid".into());
+    }
+    let extension = asset_extension(media_type).ok_or_else(|| "asset_media_type_unsupported".to_string())?;
+    Ok(path.join(ASSETS_DIR).join(format!("{asset_id}.{extension}")))
+}
+
+fn store_asset_bytes(path: &Path, bytes: &[u8]) -> Result<Value, String> {
+    if bytes.is_empty() {
+        return Err("asset_empty".into());
+    }
+    if bytes.len() > MAX_ASSET_BYTES {
+        return Err("asset_too_large".into());
+    }
+    let media_type = sniff_media_type(bytes).ok_or_else(|| "asset_media_type_unsupported".to_string())?;
+    let asset_id = format!(
+        "asset-{:032x}",
+        SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_nanos(),
+    );
+    let destination = asset_file(path, &asset_id, media_type)?;
+    fs::create_dir_all(path.join(ASSETS_DIR)).map_err(|error| error.to_string())?;
+    // Escritura atómica igual que el documento: un asset a medio copiar dejaría
+    // un descriptor apuntando a bytes truncados.
+    let mut temporary = tempfile::NamedTempFile::new_in(path.join(ASSETS_DIR)).map_err(|error| error.to_string())?;
+    temporary.write_all(bytes).map_err(|error| error.to_string())?;
+    temporary.as_file().sync_all().map_err(|error| error.to_string())?;
+    temporary.persist(&destination).map_err(|error| error.error.to_string())?;
+    Ok(serde_json::json!({ "id": asset_id, "mediaType": media_type }))
+}
+
 fn write_receipt(path: &Path, change: &ProjectChanged) -> Result<(), String> {
     let changes = path.join("changes");
     fs::create_dir_all(&changes).map_err(|error| error.to_string())?;
@@ -428,6 +494,34 @@ fn save_project(
 #[cfg_attr(feature = "desktop", tauri::command)]
 fn list_projects(roots: Vec<String>) -> Vec<ProjectSummary> {
     list_projects_in(&roots)
+}
+
+/// Copia un archivo elegido por la persona dentro de la carpeta del proyecto.
+/// El origen puede estar en cualquier parte —lo eligió un diálogo del sistema—
+/// pero el destino siempre queda dentro del proyecto, que es lo que hace que la
+/// carpeta se pueda mover o comprimir entera sin romper nada.
+#[cfg_attr(feature = "desktop", tauri::command)]
+fn import_asset(path: String, source_path: String) -> Result<Value, String> {
+    let path = project_path(&path)?;
+    let bytes = fs::read(&source_path).map_err(|_| "asset_unreadable".to_string())?;
+    let mut descriptor = store_asset_bytes(&path, &bytes)?;
+    if let Some(name) = Path::new(&source_path).file_name() {
+        descriptor["originalFilename"] = Value::String(name.to_string_lossy().into_owned());
+    }
+    Ok(descriptor)
+}
+
+/// Devuelve los bytes del asset para que el host arme su propia URL efímera.
+/// El documento guarda identidad y tipo, nunca una ruta absoluta.
+#[cfg_attr(feature = "desktop", tauri::command)]
+fn read_asset(path: String, asset_id: String, media_type: String) -> Result<Vec<u8>, String> {
+    let path = project_path(&path)?;
+    let file = asset_file(&path, &asset_id, &media_type)?;
+    let bytes = fs::read(&file).map_err(|_| "asset_not_found".to_string())?;
+    if sniff_media_type(&bytes) != Some(media_type.as_str()) {
+        return Err("asset_media_type_mismatch".into());
+    }
+    Ok(bytes)
 }
 
 #[cfg(feature = "desktop")]
@@ -537,6 +631,8 @@ pub fn run() {
             watch_project,
             read_workspace,
             list_projects,
+            import_asset,
+            read_asset,
             set_locale,
             add_source_folder,
             remove_source_folder,
@@ -727,6 +823,42 @@ mod tests {
             "source_folder_not_found",
         );
         assert_eq!(settings.source_folders.len(), 1);
+    }
+
+    const PNG: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+
+    #[test]
+    fn an_asset_is_typed_by_its_bytes_and_never_by_its_extension() {
+        let project = tempfile::tempdir().unwrap();
+        let mut png = PNG.to_vec();
+        png.extend_from_slice(b"rest of the image");
+
+        let descriptor = store_asset_bytes(project.path(), &png).unwrap();
+        assert_eq!(descriptor["mediaType"], "image/png");
+        let id = descriptor["id"].as_str().unwrap();
+        assert!(project.path().join(ASSETS_DIR).join(format!("{id}.png")).is_file());
+
+        // Un archivo que se llama imagen pero no lo es queda fuera del documento.
+        assert_eq!(store_asset_bytes(project.path(), b"<html>nope</html>").unwrap_err(), "asset_media_type_unsupported");
+        assert_eq!(store_asset_bytes(project.path(), b"").unwrap_err(), "asset_empty");
+    }
+
+    #[test]
+    fn asset_paths_stay_inside_the_project_and_reject_a_forged_id() {
+        let project = tempfile::tempdir().unwrap();
+        assert_eq!(asset_file(project.path(), "../escape", "image/png").unwrap_err(), "asset_id_invalid");
+        assert_eq!(asset_file(project.path(), "a/b", "image/png").unwrap_err(), "asset_id_invalid");
+        assert_eq!(asset_file(project.path(), "ok-1", "text/html").unwrap_err(), "asset_media_type_unsupported");
+        assert!(asset_file(project.path(), "ok-1", "image/webp").unwrap().ends_with("assets/ok-1.webp"));
+    }
+
+    #[test]
+    fn an_oversized_asset_is_refused_before_touching_the_disk() {
+        let project = tempfile::tempdir().unwrap();
+        let mut huge = PNG.to_vec();
+        huge.resize(MAX_ASSET_BYTES + 1, 0);
+        assert_eq!(store_asset_bytes(project.path(), &huge).unwrap_err(), "asset_too_large");
+        assert!(!project.path().join(ASSETS_DIR).exists());
     }
 
     #[cfg(unix)]

@@ -10,6 +10,8 @@ export interface CanvasProps {
   slideId: string;
   selectedId?: string;
   disabled?: boolean;
+  /** URLs efímeras por asset; el documento sólo guarda identidades. */
+  assetUrls?: Record<string, string>;
   onSelect(elementId: string | undefined): void;
   /** Confirma geometría al soltar. Arrastrar no escribe en disco por frame. */
   onCommitGeometry(elementId: string, patch: Pick<EditorElement, "x" | "y" | "width" | "height">): void;
@@ -35,6 +37,7 @@ export function Canvas({
   slideId,
   selectedId,
   disabled = false,
+  assetUrls,
   onSelect,
   onCommitGeometry,
 }: CanvasProps) {
@@ -45,9 +48,17 @@ export function Canvas({
   const elements = editorElements(deck, slideId);
   const { width, height } = deck.canvas;
 
+  const assets = useRef(assetUrls);
+  assets.current = assetUrls;
+
   useEffect(() => {
     if (!host.current) return;
-    const instance = new RendererCore({ respectReducedMotion: true });
+    // El resolvedor lee de un ref: cambiar de asset no puede remontar el
+    // renderer, porque eso cancelaría cualquier animación en curso.
+    const instance = new RendererCore({
+      respectReducedMotion: true,
+      assetResolver: ({ assetId }) => (assetId ? assets.current?.[assetId] : undefined),
+    });
     instance.mount(host.current);
     instance.setViewportMode("editor");
     renderer.current = instance;
@@ -61,7 +72,7 @@ export function Canvas({
   // cada render cancelaría cualquier animación en curso.
   useEffect(() => {
     renderer.current?.renderSlide(deck, slideId);
-  }, [deck, slideId]);
+  }, [deck, slideId, assetUrls]);
 
   const beginDrag = (event: React.PointerEvent, element: EditorElement, mode: Drag["mode"]) => {
     if (disabled || element.isLocked || event.button !== 0) return;

@@ -32,10 +32,19 @@ function setup(document: DeksDocument = createPresentation("Deck", { width: 1600
       return next;
     },
   };
+  const imported = { id: "asset-1", mediaType: "image/png", originalFilename: "logo.png" };
   render(
-    <Editor t={translator("es")} source={document} persistence={persistence} status="Local" onExit={() => undefined} />,
+    <Editor
+      t={translator("es")}
+      source={document}
+      persistence={persistence}
+      status="Local"
+      projectPath="/tmp/deck"
+      onImportAsset={async () => imported}
+      onExit={() => undefined}
+    />,
   );
-  return { saved };
+  return { saved, imported };
 }
 
 beforeEach(() => rendered.mockClear());
@@ -125,6 +134,8 @@ describe("editor de escritorio", () => {
         source={document}
         persistence={{ save: async () => { throw new Error("revision_conflict"); } }}
         status="Local"
+        projectPath="/tmp/deck"
+        onImportAsset={async () => undefined}
         onExit={() => undefined}
       />,
     );
@@ -146,5 +157,64 @@ describe("editor de escritorio", () => {
 
     await user.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Deck" })).not.toBeInTheDocument());
+  });
+});
+
+describe("assets e historial", () => {
+  it("registra el asset y el elemento imagen en una sola revisión", async () => {
+    const user = userEvent.setup();
+    const { saved, imported } = setup();
+
+    await user.click(screen.getByRole("button", { name: "Imagen" }));
+
+    await waitFor(() => expect(saved).toHaveLength(1));
+    const document = saved[0]!;
+    // Descriptor y elemento viajan juntos: un `assetId` sin descriptor sería un
+    // documento que la web rechaza al abrirlo.
+    expect(document.assets).toEqual([
+      { id: imported.id, kind: "embedded", mediaType: "image/png", originalFilename: "logo.png" },
+    ]);
+    expect(document.elements[0]).toMatchObject({ kind: "image", name: "logo.png" });
+    expect(document.slides[0]!.states[0]).toMatchObject({ assetId: imported.id, fit: "contain" });
+  });
+
+  it("deshace un comando a la vez, avanzando la revisión en vez de retrocederla", async () => {
+    const user = userEvent.setup();
+    const { saved } = setup();
+
+    await user.click(screen.getByRole("button", { name: "Texto" }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+    await user.click(screen.getByRole("button", { name: "Rectángulo" }));
+    await waitFor(() => expect(saved).toHaveLength(2));
+    expect(saved.at(-1)!.elements).toHaveLength(2);
+
+    await user.click(screen.getByRole("button", { name: "Deshacer" }));
+    await waitFor(() => expect(saved).toHaveLength(3));
+    // Vuelve el contenido anterior, pero la revisión sigue subiendo: el reloj
+    // que comparte con el watcher y los agentes nunca retrocede.
+    expect(saved.at(-1)!.elements).toHaveLength(1);
+    expect(saved.at(-1)!.revision).toBe(3);
+
+    await user.click(screen.getByRole("button", { name: "Rehacer" }));
+    await waitFor(() => expect(saved).toHaveLength(4));
+    expect(saved.at(-1)!.elements).toHaveLength(2);
+    expect(saved.at(-1)!.revision).toBe(4);
+  });
+
+  it("deshabilita deshacer y rehacer cuando no hay a dónde ir", async () => {
+    const user = userEvent.setup();
+    const { saved } = setup();
+    expect(screen.getByRole("button", { name: "Deshacer" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Rehacer" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Texto" }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+    expect(screen.getByRole("button", { name: "Deshacer" })).toBeEnabled();
+
+    // Editar después de deshacer descarta la rama que rehacer prometía.
+    await user.click(screen.getByRole("button", { name: "Deshacer" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Rehacer" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Elipse" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Rehacer" })).toBeDisabled());
   });
 });

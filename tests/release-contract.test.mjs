@@ -5,12 +5,17 @@ import test from "node:test";
 import { assertReleaseContract, parseStableTag, verifyBundledSkills } from "../scripts/release-contract.mjs";
 
 const root = new URL("..", import.meta.url);
+// La versión se lee del manifiesto, no se repite aquí: un número copiado se
+// queda atrás en el bump y rompe el release justo cuando ya no hay vuelta atrás.
+const { version } = JSON.parse(await readFile(new URL("package.json", root), "utf8"));
 
 test("release tags are stable SemVer and match npm, Cargo and Tauri metadata", async () => {
   assert.equal(parseStableTag("v0.2.0"), "0.2.0");
   assert.throws(() => parseStableTag("0.2.0"), /release_tag_invalid/);
   assert.throws(() => parseStableTag("v0.2.0-beta.1"), /release_tag_invalid/);
-  await assert.doesNotReject(assertReleaseContract(root, "v0.2.1"));
+  await assert.doesNotReject(assertReleaseContract(root, `v${version}`));
+  // Una versión distinta de la declarada debe fallar cerrado.
+  await assert.rejects(assertReleaseContract(root, "v9.9.9"), /release_version_mismatch/);
 });
 
 test("the package contract enables native bundles and embeds only the two reviewed skills", async () => {

@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { assertDeksDocument, type DeksDocument } from "@deks-js/document";
@@ -12,7 +12,7 @@ import { createPresentation } from "../src/model";
 const rendered = vi.fn();
 vi.mock("@deks-js/renderer-core", () => ({
   RendererCore: class {
-    mount() {}
+    mount(host: HTMLElement) { host.replaceChildren(); }
     setViewportMode() {}
     renderSlide(document: unknown, slideId?: string) { rendered(slideId); }
     compileTransition() { return {}; }
@@ -38,7 +38,7 @@ function setup(document: DeksDocument = createPresentation("Deck", { width: 1600
       t={translator("es")}
       source={document}
       persistence={persistence}
-      status="Local"
+      saveState="idle"
       projectPath="/tmp/deck"
       onImportAsset={async () => imported}
       onExit={() => undefined}
@@ -79,9 +79,11 @@ describe("editor de escritorio", () => {
       expect(last.slides[0]!.states[0]!.content).toBe("Hola");
     });
 
+    // El número se confirma al aceptar, no en cada tecla: escribir «3» de «300»
+    // no puede escribir la posición 3 en el disco.
     const x = screen.getByLabelText("X");
     await user.clear(x);
-    await user.type(x, "300");
+    await user.type(x, "300{Enter}");
     await waitFor(() => expect(saved.at(-1)!.slides[0]!.states[0]!.x).toBe(300));
   });
 
@@ -106,7 +108,8 @@ describe("editor de escritorio", () => {
     await waitFor(() => expect(saved.at(-1)!.slides).toHaveLength(2));
 
     const first = saved.at(-1)!.slides[0]!.id;
-    await user.click(screen.getByRole("button", { name: "Mover la slide 2 arriba" }));
+    screen.getByRole("button", { name: "Arrastrar la slide 2" }).focus();
+    await user.keyboard("{ArrowUp}");
     await waitFor(() => expect(saved.at(-1)!.slides[1]!.id).toBe(first));
   });
 
@@ -116,7 +119,7 @@ describe("editor de escritorio", () => {
     await user.click(screen.getByRole("button", { name: "Rectángulo" }));
     await waitFor(() => expect(saved).toHaveLength(1));
 
-    await user.click(screen.getByRole("button", { name: "Quitar de esta slide" }));
+    await user.click(await screen.findByRole("button", { name: "Quitar de esta slide" }));
     await waitFor(() => {
       const last = saved.at(-1)!;
       expect(last.slides[0]!.states).toHaveLength(0);
@@ -133,7 +136,7 @@ describe("editor de escritorio", () => {
         t={translator("es")}
         source={document}
         persistence={{ save: async () => { throw new Error("revision_conflict"); } }}
-        status="Local"
+        saveState="idle"
         projectPath="/tmp/deck"
         onImportAsset={async () => undefined}
         onExit={() => undefined}
@@ -144,6 +147,7 @@ describe("editor de escritorio", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/Otro proceso guardó primero/);
     // Nada quedó a medias en pantalla: sin elemento, no hay inspector de elemento.
+    await user.click(screen.getByRole("tab", { name: "Elemento" }));
     expect(screen.getByText("Selecciona un elemento para editarlo.")).toBeInTheDocument();
   });
 
@@ -216,5 +220,184 @@ describe("assets e historial", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Rehacer" })).toBeEnabled());
     await user.click(screen.getByRole("button", { name: "Elipse" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Rehacer" })).toBeDisabled());
+  });
+});
+
+/**
+ * jsdom no implementa `PointerEvent`, así que el gesto se arma con el evento de
+ * ratón equivalente: lo que importa del arrastre son el tipo, el botón y las
+ * coordenadas, y son los tres que el lienzo lee.
+ */
+function pointer(type: string, target: Window | Element, clientX: number, clientY: number) {
+  target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX, clientY }));
+}
+
+describe("lienzo", () => {
+  it("arrastra un elemento y confirma una sola escritura con la geometría final", async () => {
+    const user = userEvent.setup();
+    const { saved } = setup();
+    await user.click(screen.getByRole("button", { name: "Rectángulo" }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+    const before = saved.at(-1)!.slides[0]!.states[0]!;
+
+    const target = screen.getByRole("button", { name: "Rectángulo", pressed: true });
+    pointer("pointerdown", target, 0, 0);
+    pointer("pointermove", window, 40, 25);
+    pointer("pointermove", window, 80, 50);
+    pointer("pointerup", window, 80, 50);
+
+    // Un gesto, una revisión: mover no puede escribir en disco por frame.
+    await waitFor(() => expect(saved).toHaveLength(2));
+    const after = saved.at(-1)!.slides[0]!.states[0]!;
+    expect(after.x).toBe(before.x + 80);
+    expect(after.y).toBe(before.y + 50);
+    expect(after.width).toBe(before.width);
+  });
+
+  it("cancela el arrastre con Escape sin escribir nada", async () => {
+    const user = userEvent.setup();
+    const { saved } = setup();
+    await user.click(screen.getByRole("button", { name: "Rectángulo" }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+
+    const target = screen.getByRole("button", { name: "Rectángulo", pressed: true });
+    pointer("pointerdown", target, 0, 0);
+    pointer("pointermove", window, 60, 60);
+    fireEvent.keyDown(window, { key: "Escape" });
+    pointer("pointerup", window, 60, 60);
+
+    expect(saved).toHaveLength(1);
+  });
+
+  it("mueve el elemento seleccionado con las flechas", async () => {
+    const user = userEvent.setup();
+    const { saved } = setup();
+    await user.click(screen.getByRole("button", { name: "Rectángulo" }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+    const before = saved.at(-1)!.slides[0]!.states[0]!;
+
+    const target = screen.getByRole("button", { name: "Rectángulo", pressed: true });
+    target.focus();
+    fireEvent.keyDown(target, { key: "ArrowRight", shiftKey: true });
+
+    await waitFor(() => expect(saved.at(-1)!.slides[0]!.states[0]!.x).toBe(before.x + 10));
+  });
+
+  it("abre el menú contextual del elemento y duplica desde ahí", async () => {
+    const user = userEvent.setup();
+    const { saved } = setup();
+    await user.click(screen.getByRole("button", { name: "Rectángulo" }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Rectángulo", pressed: true }));
+    await user.click(await screen.findByRole("menuitem", { name: /Duplicar elemento/ }));
+
+    await waitFor(() => expect(saved.at(-1)!.elements).toHaveLength(2));
+    // La copia es una identidad propia y nace desplazada, no encima.
+    const [first, second] = saved.at(-1)!.slides[0]!.states;
+    expect(second!.elementId).not.toBe(first!.elementId);
+    expect(second!.x).toBeGreaterThan(first!.x);
+  });
+});
+
+describe("inventario de elementos", () => {
+  it("reaparece en otra slide un elemento que ya existe, sin crear otra identidad", async () => {
+    const user = userEvent.setup();
+    const { saved } = setup();
+
+    await user.click(screen.getByRole("button", { name: "Rectángulo" }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+    await user.click(screen.getByRole("button", { name: "Slide vacía" }));
+    await waitFor(() => expect(saved.at(-1)!.slides).toHaveLength(2));
+
+    await user.click(screen.getByRole("tab", { name: "Elementos" }));
+    await user.click(screen.getByRole("button", { name: "Agregar «Rectángulo» a esta slide" }));
+
+    await waitFor(() => {
+      const last = saved.at(-1)!;
+      expect(last.elements).toHaveLength(1);
+      // La misma identidad en dos checkpoints: es lo que el renderer interpola.
+      expect(last.slides[1]!.states[0]!.elementId).toBe(last.slides[0]!.states[0]!.elementId);
+    });
+  });
+});
+
+describe("movimiento de la slide", () => {
+  it("muestra el movimiento heredado y declara sólo la propiedad que se toca", async () => {
+    const user = userEvent.setup();
+    const { saved } = setup();
+
+    // Sin declaración propia, los campos muestran lo que resuelve el documento.
+    expect(screen.getByText("Heredado del documento")).toBeInTheDocument();
+    const duration = screen.getByLabelText("Duración (beats)");
+    expect(duration).toHaveValue("1");
+
+    await user.clear(duration);
+    await user.type(duration, "2{Enter}");
+
+    await waitFor(() => {
+      const slide = saved.at(-1)!.slides[0]!;
+      expect(slide.motion?.in?.durationBeats).toBe(2);
+      // El resto sigue heredando: un parche no congela lo que no se tocó.
+      expect(slide.motion?.in?.easing).toBeUndefined();
+      expect(slide.motion?.out).toBeUndefined();
+    });
+    expect(await screen.findByText("Declarado en esta slide")).toBeInTheDocument();
+  });
+
+  it("vuelve a heredar al limpiar el rol declarado", async () => {
+    const user = userEvent.setup();
+    const { saved } = setup();
+
+    const duration = screen.getByLabelText("Duración (beats)");
+    await user.clear(duration);
+    await user.type(duration, "3{Enter}");
+    await waitFor(() => expect(saved.at(-1)!.slides[0]!.motion?.in?.durationBeats).toBe(3));
+
+    await user.click(screen.getByRole("button", { name: "Volver a heredar" }));
+    await waitFor(() => expect(saved.at(-1)!.slides[0]!.motion?.in).toBeUndefined());
+  });
+});
+
+describe("navegación entre slides", () => {
+  it("conserva la pestaña del inspector al cambiar de slide", async () => {
+    const user = userEvent.setup();
+    const { saved } = setup();
+    await user.click(screen.getByRole("button", { name: "Slide vacía" }));
+    await waitFor(() => expect(saved.at(-1)!.slides).toHaveLength(2));
+
+    await user.click(screen.getByRole("tab", { name: "Elementos" }));
+    await user.click(screen.getByRole("button", { name: /Slide 1:/ }));
+
+    // Cambiar de slide no puede devolver el panel a otra pestaña: se estaba
+    // mirando el inventario para llevar un elemento de una slide a otra.
+    expect(screen.getByRole("tab", { name: "Elementos", selected: true })).toBeInTheDocument();
+  });
+});
+
+describe("nombre de la presentación", () => {
+  it("se edita desde el título de la barra y viaja como comando del documento", async () => {
+    const user = userEvent.setup();
+    const { saved } = setup();
+
+    await user.click(screen.getByRole("button", { name: "Cambiar el nombre de la presentación" }));
+    const field = screen.getByLabelText("Nombre de la presentación");
+    await user.clear(field);
+    await user.type(field, "Pitch de agosto{Enter}");
+
+    await waitFor(() => expect(saved.at(-1)!.name).toBe("Pitch de agosto"));
+  });
+
+  it("un nombre vacío deja el anterior en pie", async () => {
+    const user = userEvent.setup();
+    const { saved } = setup();
+
+    await user.click(screen.getByRole("button", { name: "Cambiar el nombre de la presentación" }));
+    const field = screen.getByLabelText("Nombre de la presentación");
+    await user.clear(field);
+    await user.keyboard("{Enter}");
+
+    expect(saved).toHaveLength(0);
+    expect(screen.getByRole("button", { name: "Cambiar el nombre de la presentación" })).toHaveTextContent("Deck");
   });
 });

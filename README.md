@@ -64,30 +64,36 @@ GitHub's `releases/latest/download/...` URLs without embedding a DEKS Desktop ve
 
 ## Bundled agent setup
 
-The welcome screen can install two reviewed skills from `deks-plugin` 0.1.7:
+Settings → Agents installs two reviewed skills from `deks-plugin` 0.1.7:
 
 - `deks-presentations`, the technical MCP and safety contract;
 - `design-deks-presentations`, the story, visual-system, motion and QA method.
 
-Choose the agent's existing `skills` parent directory explicitly. Desktop copies each complete skill
-tree, including its relative references and agent metadata. It does not infer a home directory,
-modify an agent configuration, follow bundled symlinks or overwrite a directory with the same skill
-name. To update an existing installation, review/remove it yourself and run the installer again.
+Desktop detects which agents exist on this machine by reading the configuration directory each agent
+creates for itself, and groups the ones that share an MCP configuration format. Detection is
+read-only. For an agent with a known global skills directory, Desktop installs the complete skill
+tree there; for anything else, choose the agent's existing `skills` parent directory explicitly. It
+copies each complete skill tree, including its relative references and agent metadata. It never
+follows bundled symlinks and never overwrites a directory with the same skill name. To update an
+existing installation, review/remove it yourself and run the installer again.
 
-The same screen can install `deks-local-mcp` into an explicitly selected parent directory. That
-payload includes the server, exact npm dependency lock and its own README, so it does not depend on a
-source checkout. It deliberately does not embed a general-purpose Node runtime or a browser binary.
-Install Node.js 22 or newer, then run from the installed `deks-local-mcp` directory:
+The same screen installs `deks-local-mcp` once into the application data directory, and never
+replaces an existing runtime. That payload includes the server, exact npm dependency lock and its own
+README, so it does not depend on a source checkout. It deliberately does not embed a general-purpose
+Node runtime or a browser binary. Install Node.js 22 or newer, then run from the installed
+`deks-local-mcp` directory:
 
 ```bash
 npm ci --omit=dev
 npm run install-browser
 ```
 
-Configure the agent to execute `node /absolute/path/deks-local-mcp/mcp/server.mjs` and pass only the
-explicit `DEKS_PROJECTS_ROOT`. This one-time setup needs network access to npm and Playwright's
-Chromium download; normal local MCP use and preview rendering remain offline and browser network is
-blocked. Desktop never stores tokens or adds MCP configuration automatically.
+Desktop then generates the exact MCP snippet for the chosen format — `mcpServers` JSON, Codex TOML,
+VS Code, Zed or OpenCode — pointing at `node /absolute/path/deks-local-mcp/mcp/server.mjs` with only
+the explicit `DEKS_PROJECTS_ROOT`, and names the file to paste it into. Desktop never writes inside
+another program's configuration and never stores tokens. This one-time setup needs network access to
+npm and Playwright's Chromium download; normal local MCP use and preview rendering remain offline and
+browser network is blocked.
 
 ## Local MCP
 

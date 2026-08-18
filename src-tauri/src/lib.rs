@@ -427,6 +427,185 @@ struct ProjectChangedWire {
     changed_element_ids: Vec<String>,
 }
 
+/// Un agente que el host sabe reconocer. La detección es sólo lectura: mira si
+/// existe la carpeta de configuración que el propio agente crea al instalarse.
+/// Nunca escribe en la configuración de un cliente externo; para el MCP el host
+/// entrega el fragmento exacto y la persona decide dónde pegarlo.
+struct AgentTarget {
+    id: &'static str,
+    /// Familia con la que se agrupa en pantalla: agentes parecidos comparten
+    /// formato de configuración y se instalan igual.
+    group: &'static str,
+    /// Formato del fragmento MCP que entiende ese agente.
+    format: &'static str,
+    /// Carpetas que prueban que el agente está instalado, en orden de
+    /// preferencia. La primera que exista define también dónde vive su config.
+    homes: &'static [&'static str],
+    /// Archivo de configuración MCP, relativo a la carpeta detectada.
+    config: &'static str,
+    /// Carpeta de skills global, relativa a la carpeta detectada. `None`
+    /// significa que ese agente no carga skills desde una carpeta conocida y
+    /// sólo admite instalación por carpeta elegida a mano.
+    skills: Option<&'static str>,
+}
+
+const AGENT_TARGETS: [AgentTarget; 12] = [
+    AgentTarget { id: "claude-code", group: "claude", format: "mcp-servers-json", homes: &[".claude"], config: "../.claude.json", skills: Some("skills") },
+    AgentTarget { id: "claude-desktop", group: "claude", format: "mcp-servers-json", homes: &["Library/Application Support/Claude", "AppData/Roaming/Claude", ".config/Claude"], config: "claude_desktop_config.json", skills: None },
+    AgentTarget { id: "codex", group: "openai", format: "codex-toml", homes: &[".codex"], config: "config.toml", skills: None },
+    AgentTarget { id: "chatgpt-desktop", group: "openai", format: "codex-toml", homes: &["Library/Application Support/ChatGPT", "AppData/Roaming/ChatGPT"], config: "../../../.codex/config.toml", skills: None },
+    AgentTarget { id: "cursor", group: "editors", format: "mcp-servers-json", homes: &[".cursor"], config: "mcp.json", skills: None },
+    AgentTarget { id: "windsurf", group: "editors", format: "mcp-servers-json", homes: &[".codeium/windsurf"], config: "mcp_config.json", skills: None },
+    AgentTarget { id: "antigravity", group: "editors", format: "mcp-servers-json", homes: &[".antigravity", "Library/Application Support/Antigravity"], config: "mcp_config.json", skills: None },
+    AgentTarget { id: "vscode", group: "editors", format: "vscode-json", homes: &["Library/Application Support/Code/User", "AppData/Roaming/Code/User", ".config/Code/User"], config: "mcp.json", skills: None },
+    AgentTarget { id: "zed", group: "editors", format: "zed-json", homes: &[".config/zed"], config: "settings.json", skills: None },
+    AgentTarget { id: "continue", group: "editors", format: "mcp-servers-json", homes: &[".continue"], config: "config.json", skills: None },
+    AgentTarget { id: "opencode", group: "cli", format: "opencode-json", homes: &[".config/opencode"], config: "opencode.json", skills: None },
+    AgentTarget { id: "gemini-cli", group: "cli", format: "mcp-servers-json", homes: &[".gemini"], config: "settings.json", skills: None },
+];
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DetectedAgent {
+    id: String,
+    group: String,
+    format: String,
+    /// Carpeta del agente cuando existe. Sin ella el agente aparece igual, pero
+    /// como no instalado: la lista completa explica qué se puede conectar.
+    home: Option<String>,
+    config_path: Option<String>,
+    skills_path: Option<String>,
+    skills_installed: bool,
+}
+
+/// Normaliza `a/../b` sin tocar el disco: los destinos declarados suben un
+/// nivel a propósito y una ruta con `..` a la vista es ilegible en pantalla.
+fn normalize(path: &Path) -> PathBuf {
+    let mut result = PathBuf::new();
+    for part in path.components() {
+        match part {
+            std::path::Component::ParentDir => {
+                result.pop();
+            }
+            std::path::Component::CurDir => {}
+            other => result.push(other.as_os_str()),
+        }
+    }
+    result
+}
+
+fn detect_agents_in(home: &Path) -> Vec<DetectedAgent> {
+    AGENT_TARGETS
+        .iter()
+        .map(|target| {
+            let detected = target.homes.iter().map(|relative| home.join(relative)).find(|candidate| candidate.is_dir());
+            let base = detected.clone().unwrap_or_else(|| home.join(target.homes[0]));
+            let skills_path = target.skills.map(|relative| normalize(&base.join(relative)));
+            DetectedAgent {
+                id: target.id.into(),
+                group: target.group.into(),
+                format: target.format.into(),
+                home: detected.as_ref().map(|path| path.to_string_lossy().into_owned()),
+                config_path: Some(normalize(&base.join(target.config)).to_string_lossy().into_owned()),
+                skills_installed: skills_path
+                    .as_ref()
+                    .is_some_and(|path| SKILL_NAMES.iter().any(|skill| path.join(skill).is_dir())),
+                skills_path: skills_path.map(|path| path.to_string_lossy().into_owned()),
+            }
+        })
+        .collect()
+}
+
+/// Instala las skills en la carpeta global del agente, creándola si el agente
+/// todavía no la tiene. La instalación sigue sin reemplazar nada: si una skill
+/// ya está ahí, se avisa en vez de pisar el trabajo de otra versión.
+fn install_agent_skills_in(resource: &Path, home: &Path, agent_id: &str) -> Result<Vec<&'static str>, String> {
+    let target = AGENT_TARGETS.iter().find(|candidate| candidate.id == agent_id).ok_or("agent_unknown")?;
+    let relative = target.skills.ok_or("agent_without_skills_folder")?;
+    let base = target
+        .homes
+        .iter()
+        .map(|candidate| home.join(candidate))
+        .find(|candidate| candidate.is_dir())
+        .ok_or("agent_not_installed")?;
+    let destination = normalize(&base.join(relative));
+    fs::create_dir_all(&destination).map_err(|_| "destination_not_writable".to_string())?;
+    install_bundled_skills_from(resource, &destination)
+}
+
+/// El runtime administrado vive en el directorio de datos de la app, no en una
+/// carpeta del usuario: así una configuración global puede apuntar a una ruta
+/// estable que las actualizaciones del host controlan.
+fn install_managed_mcp_in(resource: &Path, data_dir: &Path) -> Result<(PathBuf, bool), String> {
+    let target = data_dir.join("deks-local-mcp");
+    if target.is_dir() {
+        // La ruta se devuelve canonicalizada igual que al instalar: la config
+        // que la persona pega tiene que apuntar siempre al mismo lugar.
+        let target = fs::canonicalize(&target).unwrap_or(target);
+        return Ok((target, false));
+    }
+    fs::create_dir_all(data_dir).map_err(|_| "destination_not_writable".to_string())?;
+    install_bundled_mcp_from(resource, data_dir).map(|path| (path, true))
+}
+
+/// Documento recortado a su portada: la primera slide, sus elementos y los
+/// descriptores que usa. El inicio dibuja la portada real sin cargar veinte
+/// presentaciones completas para pintar miniaturas.
+fn cover_document(path: &Path) -> Result<Value, String> {
+    let mut document = read_document(path)?;
+    let first = document
+        .get("slides")
+        .and_then(Value::as_array)
+        .and_then(|slides| slides.first())
+        .cloned()
+        .ok_or("cover_without_slides")?;
+    let used: Vec<String> = first
+        .get("states")
+        .and_then(Value::as_array)
+        .map(|states| {
+            states
+                .iter()
+                .filter_map(|state| state.get("elementId").and_then(Value::as_str).map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let assets: Vec<String> = first
+        .get("states")
+        .and_then(Value::as_array)
+        .map(|states| {
+            states
+                .iter()
+                .filter_map(|state| state.get("assetId").and_then(Value::as_str).map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    if let Some(elements) = document.get_mut("elements").and_then(Value::as_array_mut) {
+        elements.retain(|element| {
+            element.get("id").and_then(Value::as_str).is_some_and(|id| used.iter().any(|used| used == id))
+        });
+    }
+    if let Some(descriptors) = document.get_mut("assets").and_then(Value::as_array_mut) {
+        descriptors.retain(|asset| {
+            asset.get("id").and_then(Value::as_str).is_some_and(|id| assets.iter().any(|used| used == id))
+        });
+    }
+    document["slides"] = Value::Array(vec![first]);
+    Ok(document)
+}
+
+/// Primera carpeta libre para un nombre. Se detiene en un tope alto: si ese
+/// número de copias existe, algo más está pasando y seguir probando sólo
+/// congelaría la app recorriendo el disco.
+fn available_folder(parent: &Path, slug: &str) -> Result<PathBuf, String> {
+    for attempt in 1..1000 {
+        let candidate = parent.join(if attempt == 1 { slug.to_string() } else { format!("{slug}-{attempt}") });
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    Err("project_folder_unavailable".into())
+}
+
 #[cfg_attr(feature = "desktop", tauri::command)]
 fn create_project(parent_path: String, name: String, document: Value) -> Result<OpenProject, String> {
     let parent = fs::canonicalize(parent_path).map_err(|_| "La carpeta de destino no existe".to_string())?;
@@ -443,7 +622,10 @@ fn create_project(parent_path: String, name: String, document: Value) -> Result<
     if slug.is_empty() {
         return Err("El nombre debe contener letras o números".into());
     }
-    let path = parent.join(slug);
+    // Dos presentaciones pueden llamarse igual; dos carpetas no. El nombre que
+    // se escribió queda intacto dentro del documento y sólo la carpeta lleva un
+    // sufijo, en vez de fallar y perder lo que la persona acababa de definir.
+    let path = available_folder(&parent, &slug)?;
     fs::create_dir(&path).map_err(|error| format!("No se pudo crear la carpeta: {error}"))?;
     fs::create_dir(path.join("assets")).map_err(|error| error.to_string())?;
     fs::create_dir(path.join("changes")).map_err(|error| error.to_string())?;
@@ -592,6 +774,55 @@ fn install_bundled_mcp(app: tauri::AppHandle, destination_path: String) -> Resul
         .map(|path| path.to_string_lossy().into_owned())
 }
 
+/// Borrar manda la carpeta a la papelera del sistema, nunca la destruye. Una
+/// presentación es trabajo de alguien: si el borrado fue un error, tiene que
+/// poder deshacerse fuera de DEKS. `project_path` ya exige que la carpeta sea
+/// una presentación válida, así que esto no puede apuntar a un directorio
+/// cualquiera.
+fn discard_project(path: &Path) -> Result<(), String> {
+    trash::delete(path).map_err(|error| format!("project_delete_failed:{error}"))
+}
+
+#[cfg_attr(feature = "desktop", tauri::command)]
+fn delete_project(path: String) -> Result<(), String> {
+    discard_project(&project_path(&path)?)
+}
+
+#[cfg_attr(feature = "desktop", tauri::command)]
+fn read_project_cover(path: String) -> Result<Value, String> {
+    cover_document(&project_path(&path)?)
+}
+
+/// Qué agentes hay en este equipo. Sólo lee: la app nunca escribe en la
+/// configuración de un cliente externo sin que la persona la pegue ella misma.
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn detect_agents(app: tauri::AppHandle) -> Result<Vec<DetectedAgent>, String> {
+    let home = app.path().home_dir().map_err(|_| "home_dir_unavailable".to_string())?;
+    Ok(detect_agents_in(&home))
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn install_agent_skills(app: tauri::AppHandle, agent_id: String) -> Result<Vec<String>, String> {
+    let resources = app.path().resource_dir().map_err(|_| "resources_unavailable".to_string())?;
+    let home = app.path().home_dir().map_err(|_| "home_dir_unavailable".to_string())?;
+    install_agent_skills_in(&resources.join("bundled-skills"), &home, &agent_id)
+        .map(|skills| skills.into_iter().map(str::to_string).collect())
+}
+
+/// Instala el runtime local en el directorio de datos de la app y devuelve su
+/// ruta. Si ya estaba, no lo reemplaza: devuelve la misma ruta y avisa que no
+/// hubo instalación nueva.
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn install_managed_mcp(app: tauri::AppHandle) -> Result<Value, String> {
+    let resources = app.path().resource_dir().map_err(|_| "resources_unavailable".to_string())?;
+    let data = app.path().app_local_data_dir().map_err(|_| "data_dir_unavailable".to_string())?;
+    let (path, installed) = install_managed_mcp_in(&resources.join("bundled-mcp"), &data)?;
+    Ok(serde_json::json!({ "path": path.to_string_lossy(), "installed": installed }))
+}
+
 #[cfg(feature = "desktop")]
 #[tauri::command]
 fn watch_project(app: tauri::AppHandle, state: State<'_, WatchState>, path: String) -> Result<(), String> {
@@ -638,6 +869,11 @@ pub fn run() {
             remove_source_folder,
             install_bundled_skills,
             install_bundled_mcp,
+            read_project_cover,
+            delete_project,
+            detect_agents,
+            install_agent_skills,
+            install_managed_mcp,
         ])
         .run(tauri::generate_context!())
         .expect("error while running DEKS Desktop");
@@ -738,6 +974,137 @@ mod tests {
         fs::write(installed.join("package.json"), "personalized").unwrap();
         assert_eq!(install_bundled_mcp_from(resource.path(), destination.path()).unwrap_err(), "mcp_already_exists");
         assert_eq!(fs::read_to_string(installed.join("package.json")).unwrap(), "personalized");
+    }
+
+    #[test]
+    fn two_presentations_with_the_same_name_get_their_own_folder() {
+        let root = tempfile::tempdir().unwrap();
+        let parent = fs::canonicalize(root.path()).unwrap();
+
+        let first = available_folder(&parent, "mi-presentacion").unwrap();
+        fs::create_dir(&first).unwrap();
+        let second = available_folder(&parent, "mi-presentacion").unwrap();
+
+        assert_eq!(first.file_name().unwrap(), "mi-presentacion");
+        assert_eq!(second.file_name().unwrap(), "mi-presentacion-2");
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn deleting_refuses_a_folder_that_is_not_a_presentation() {
+        let root = tempfile::tempdir().unwrap();
+        let stranger = root.path().join("documentos");
+        fs::create_dir(&stranger).unwrap();
+
+        // El borrado pasa por la misma validación que abrir: sin documento
+        // canónico, la carpeta no es una presentación y no se toca.
+        assert!(project_path(stranger.to_str().unwrap()).is_err());
+        assert!(stranger.is_dir());
+    }
+
+    fn seed_skill_bundle(resource: &Path) {
+        for skill in SKILL_NAMES {
+            let skill_path = resource.join("skills").join(skill);
+            fs::create_dir_all(&skill_path).unwrap();
+            fs::write(skill_path.join("SKILL.md"), skill).unwrap();
+        }
+    }
+
+    #[test]
+    fn an_agent_is_detected_by_the_folder_it_creates_and_never_invented() {
+        let home = tempfile::tempdir().unwrap();
+        fs::create_dir_all(home.path().join(".claude")).unwrap();
+
+        let agents = detect_agents_in(home.path());
+        let claude = agents.iter().find(|agent| agent.id == "claude-code").unwrap();
+        assert!(claude.home.is_some());
+        assert!(!claude.skills_installed);
+        // La ruta se muestra tal cual se abre: subir un nivel no puede llegar a
+        // pantalla como `~/.claude/../.claude.json`.
+        assert_eq!(claude.config_path.as_deref().unwrap(), home.path().join(".claude.json").to_string_lossy());
+        assert_eq!(claude.skills_path.as_deref().unwrap(), home.path().join(".claude/skills").to_string_lossy());
+
+        // Un agente ausente sigue en la lista, pero sin carpeta: el catálogo
+        // completo explica qué se puede conectar sin fingir instalaciones.
+        let cursor = agents.iter().find(|agent| agent.id == "cursor").unwrap();
+        assert!(cursor.home.is_none());
+        assert_eq!(agents.iter().filter(|agent| agent.group == "claude").count(), 2);
+    }
+
+    #[test]
+    fn agent_skills_install_globally_only_for_an_installed_agent() {
+        let resource = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        seed_skill_bundle(resource.path());
+
+        assert_eq!(
+            install_agent_skills_in(resource.path(), home.path(), "claude-code").unwrap_err(),
+            "agent_not_installed",
+        );
+        assert_eq!(
+            install_agent_skills_in(resource.path(), home.path(), "cursor").unwrap_err(),
+            "agent_without_skills_folder",
+        );
+
+        fs::create_dir_all(home.path().join(".claude")).unwrap();
+        let installed = install_agent_skills_in(resource.path(), home.path(), "claude-code").unwrap();
+        assert_eq!(installed, SKILL_NAMES);
+        assert!(home.path().join(".claude/skills").join(SKILL_NAMES[0]).join("SKILL.md").is_file());
+        assert!(detect_agents_in(home.path()).iter().find(|agent| agent.id == "claude-code").unwrap().skills_installed);
+
+        // Una segunda instalación no pisa lo que ya está.
+        assert_eq!(
+            install_agent_skills_in(resource.path(), home.path(), "claude-code").unwrap_err(),
+            "skill_already_exists",
+        );
+    }
+
+    #[test]
+    fn the_managed_runtime_installs_once_and_reuses_its_folder() {
+        let resource = tempfile::tempdir().unwrap();
+        let data = tempfile::tempdir().unwrap();
+        fs::write(resource.path().join("package.json"), "{}").unwrap();
+
+        let (path, installed) = install_managed_mcp_in(resource.path(), data.path()).unwrap();
+        assert!(installed);
+        assert!(path.join("package.json").is_file());
+
+        fs::write(path.join("package.json"), "{\"edited\":true}").unwrap();
+        let (again, installed) = install_managed_mcp_in(resource.path(), data.path()).unwrap();
+        assert!(!installed);
+        assert_eq!(again, path);
+        assert_eq!(fs::read_to_string(path.join("package.json")).unwrap(), "{\"edited\":true}");
+    }
+
+    #[test]
+    fn a_cover_carries_only_the_first_slide_and_what_it_draws() {
+        let root = tempfile::tempdir().unwrap();
+        let path = seed_project(
+            root.path(),
+            "deck",
+            serde_json::json!({
+                "format": "deks",
+                "revision": 4,
+                "name": "Deck",
+                "canvas": { "width": 1920, "height": 1080 },
+                "assets": [{ "id": "asset-1" }, { "id": "asset-2" }],
+                "elements": [{ "id": "element-1" }, { "id": "element-2" }],
+                "slides": [
+                    { "id": "slide-1", "states": [{ "elementId": "element-1", "assetId": "asset-1" }] },
+                    { "id": "slide-2", "states": [{ "elementId": "element-2" }] },
+                ],
+            }),
+        );
+
+        let cover = cover_document(&path).unwrap();
+        assert_eq!(cover["slides"].as_array().unwrap().len(), 1);
+        assert_eq!(cover["slides"][0]["id"], "slide-1");
+        assert_eq!(cover["elements"].as_array().unwrap(), &vec![serde_json::json!({ "id": "element-1" })]);
+        assert_eq!(cover["assets"].as_array().unwrap(), &vec![serde_json::json!({ "id": "asset-1" })]);
+        // La revisión y el lienzo viajan intactos: la portada se dibuja con el
+        // mismo renderer que el editor.
+        assert_eq!(cover["revision"], 4);
+        assert_eq!(cover["canvas"]["width"], 1920);
     }
 
     fn seed_project(root: &Path, folder: &str, document: Value) -> PathBuf {

@@ -8,6 +8,8 @@ export interface PresenterProps {
   t: Translate;
   document: DeksDocument;
   initialSlideId: string;
+  /** URLs efímeras por asset: sin ellas una imagen no se ve al presentar. */
+  assetUrls?: Record<string, string>;
   onClose(): void;
 }
 
@@ -16,10 +18,13 @@ export interface PresenterProps {
  * transición se ve aquí igual que en la web. Core resuelve la arista desde el
  * documento; el escritorio sólo decide cuándo avanzar.
  */
-export function Presenter({ t, document: deck, initialSlideId, onClose }: PresenterProps) {
+export function Presenter({ t, document: deck, initialSlideId, assetUrls, onClose }: PresenterProps) {
   const host = useRef<HTMLDivElement>(null);
   const renderer = useRef<RendererCore>();
   const moving = useRef(false);
+  const [awake, setAwake] = useState(false);
+  const assets = useRef(assetUrls);
+  assets.current = assetUrls;
   const [index, setIndex] = useState(() => {
     const found = deck.slides.findIndex(({ id }) => id === initialSlideId);
     return found < 0 ? 0 : found;
@@ -27,7 +32,10 @@ export function Presenter({ t, document: deck, initialSlideId, onClose }: Presen
 
   useEffect(() => {
     if (!host.current) return;
-    const instance = new RendererCore({ respectReducedMotion: true });
+    const instance = new RendererCore({
+      respectReducedMotion: true,
+      assetResolver: ({ assetId }) => (assetId ? assets.current?.[assetId] : undefined),
+    });
     instance.mount(host.current);
     instance.setViewportMode("presentation");
     instance.renderSlide(deck, deck.slides[index]!.id);
@@ -63,6 +71,26 @@ export function Presenter({ t, document: deck, initialSlideId, onClose }: Presen
     }
   }, [deck, index]);
 
+  /**
+   * Los controles duermen. Presentar es mostrar la slide: un chrome permanente
+   * sale en la proyección y en cualquier grabación. El puntero los despierta
+   * unos segundos, y quedan fijos mientras se les hace hover o tienen el foco,
+   * que es lo que necesita quien va a usarlos.
+   */
+  useEffect(() => {
+    let timer = 0;
+    const wake = () => {
+      setAwake(true);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setAwake(false), 2200);
+    };
+    window.addEventListener("pointermove", wake);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("pointermove", wake);
+    };
+  }, []);
+
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if (event.key === "ArrowRight" || event.key === " ") { event.preventDefault(); void move(1); }
@@ -86,10 +114,7 @@ export function Presenter({ t, document: deck, initialSlideId, onClose }: Presen
       >
         <div ref={host} className="presenter__render" />
       </div>
-      {/* Los controles descansan hasta que el puntero los busca: presentar es
-          mostrar la slide, no el chrome. El foco entrante también los despierta,
-          así que el teclado nunca queda sin salida visible. */}
-      <nav className="presenter__controls" aria-label={t("editor.present")}>
+      <nav className={`presenter__controls ${awake ? "is-awake" : ""}`} aria-label={t("editor.present")}>
         <button type="button" aria-label={t("editor.previousSlide")} disabled={index === 0} onClick={() => void move(-1)}>
           <ChevronLeft aria-hidden="true" />
         </button>

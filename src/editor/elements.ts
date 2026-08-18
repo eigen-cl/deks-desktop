@@ -180,6 +180,92 @@ export function createImageElement(
   };
 }
 
+/**
+ * Identidades que existen en la presentación pero no en esta slide, con el
+ * checkpoint más cercano del que copiarlas. Reaparecer un elemento en otra
+ * slide es lo que hace continuo un deck: el renderer interpola entre los dos
+ * checkpoints de la misma identidad en vez de cortar.
+ */
+export function elementsElsewhere(
+  document: DeksDocument,
+  slideId: string,
+): Array<{ element: EditorElement; sourceSlideId: string }> {
+  const present = new Set(slideOf(document, slideId).states.map((state) => state.elementId));
+  const found = new Map<string, { element: EditorElement; sourceSlideId: string }>();
+  for (const slide of document.slides) {
+    if (slide.id === slideId) continue;
+    for (const element of editorElements(document, slide.id)) {
+      if (present.has(element.id) || found.has(element.id)) continue;
+      found.set(element.id, { element, sourceSlideId: slide.id });
+    }
+  }
+  return [...found.values()];
+}
+
+/** Copia el checkpoint de otra slide para estrenar el elemento en esta. */
+export function stateForSlide(
+  document: DeksDocument,
+  slideId: string,
+  elementId: string,
+  sourceSlideId: string,
+  position?: { x: number; y: number },
+): DeksElementState {
+  const source = elementState(document, sourceSlideId, elementId);
+  if (!source) throw new Error(`Unknown DEKS element state: ${elementId}`);
+  return {
+    ...structuredClone(source),
+    ...(position ? { x: position.x, y: position.y } : {}),
+    zIndex: nextZIndex(document, slideId),
+  };
+}
+
+/**
+ * Duplica un elemento como una identidad nueva, desplazado lo justo para que la
+ * copia se vea encima del original en vez de esconderse debajo.
+ */
+export function duplicateElement(
+  document: DeksDocument,
+  slideId: string,
+  source: EditorElement,
+): { element: DeksElement; state: DeksElementState } {
+  const state = elementState(document, slideId, source.id);
+  if (!state) throw new Error(`Unknown DEKS element state: ${source.id}`);
+  const elementId = id("element");
+  const offset = Math.round(Math.min(document.canvas.width, document.canvas.height) * 0.02);
+  return {
+    element: { ...identityOf(source), id: elementId },
+    state: {
+      ...structuredClone(state),
+      elementId,
+      x: state.x + offset,
+      y: state.y + offset,
+      zIndex: nextZIndex(document, slideId),
+    },
+  };
+}
+
+/**
+ * Intercambia el orden de pintado con el vecino inmediato. Devuelve dos
+ * parches porque `zIndex` es una posición relativa: subir uno sin bajar al otro
+ * dejaría dos elementos empatados y el orden dependería del azar.
+ */
+export function swapZIndex(
+  document: DeksDocument,
+  slideId: string,
+  elementId: string,
+  direction: -1 | 1,
+): Array<{ elementId: string; zIndex: number }> {
+  const ordered = editorElements(document, slideId);
+  const index = ordered.findIndex((element) => element.id === elementId);
+  const neighbour = ordered[index + direction];
+  const current = ordered[index];
+  if (!current || !neighbour) return [];
+  return [
+    { elementId: current.id, zIndex: neighbour.zIndex },
+    { elementId: neighbour.id, zIndex: current.zIndex },
+  ];
+}
+
 /** Slide nueva con el fondo del documento, para no estrenar un blanco ajeno. */
 export function createSlide(document: DeksDocument, name: string): DeksSlide {
   return {
@@ -194,6 +280,15 @@ export function createSlide(document: DeksDocument, name: string): DeksSlide {
 /** Copia una slide con estados intactos y una identidad propia. */
 export function duplicateSlide(slide: DeksSlide, name: string): DeksSlide {
   return { ...structuredClone(slide), id: id("slide"), name };
+}
+
+/** Devuelve sólo la identidad de un elemento del editor, sin su checkpoint. */
+function identityOf(element: EditorElement): DeksElement {
+  const { name, isLocked } = element;
+  if (element.kind === "shape") {
+    return { id: element.id, kind: "shape", shapeKind: element.shapeKind, name, isLocked };
+  }
+  return { id: element.id, kind: element.kind, name, isLocked } as DeksElement;
 }
 
 export function clampOpacity(value: number) {

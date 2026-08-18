@@ -1,6 +1,6 @@
 [package]
 name = "deks-desktop"
-version = "0.4.0"
+version = "0.5.0"
 description = "Local-first desktop host for DEKS"
 authors = ["EIGEN"]
 license = "Apache-2.0"
@@ -28,3 +28,4 @@ tauri-plugin-dialog = { version = "2", optional = true }
 tauri-plugin-updater = { version = "2", optional = true }
 tauri-plugin-process = { version = "2", optional = true }
 tempfile = "3"
+trash = "5"

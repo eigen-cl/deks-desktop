@@ -5,7 +5,7 @@ import type { DeksDocument } from "@deks-js/document";
 import { toCanonicalDocument } from "./legacy-document";
 import type { ImportedAsset } from "./editor/elements";
 import type { Locale } from "./i18n";
-import type { OpenProject, ProjectChanged, ProjectSummary, Workspace } from "./model";
+import type { DetectedAgent, ManagedMcp, OpenProject, ProjectChanged, ProjectSummary, Workspace } from "./model";
 
 /** Raíz por defecto, idioma guardado y carpetas fuente en una sola llamada. */
 export function readWorkspace(): Promise<Workspace> {
@@ -61,6 +61,35 @@ export function saveProject(
     changedSlideIds,
     changedElementIds,
   }).then(canonical);
+}
+
+/**
+ * Documento recortado a su portada. El inicio dibuja la primera slide con el
+ * mismo renderer que el editor, pero sólo de las tarjetas que llegan a verse.
+ */
+export function readProjectCover(path: string): Promise<DeksDocument> {
+  return invoke<DeksDocument>("read_project_cover", { path }).then(toCanonicalDocument);
+}
+
+/**
+ * Manda la carpeta de la presentación a la papelera del sistema. No la
+ * destruye: si el borrado fue un error, se recupera fuera de DEKS.
+ */
+export function deleteProject(path: string): Promise<void> {
+  return invoke("delete_project", { path });
+}
+
+/** Qué agentes hay instalados en este equipo. Sólo lee; nunca los configura. */
+export function detectAgents(): Promise<DetectedAgent[]> {
+  return invoke<DetectedAgent[]>("detect_agents");
+}
+
+export function installAgentSkills(agentId: string): Promise<string[]> {
+  return invoke<string[]>("install_agent_skills", { agentId });
+}
+
+export function installManagedMcp(): Promise<ManagedMcp> {
+  return invoke<ManagedMcp>("install_managed_mcp");
 }
 
 export function watchProject(path: string): Promise<void> {

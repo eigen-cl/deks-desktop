@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DeksDocument } from "@deks-js/document";
+import { applyDeksCommands, type DeksDocument } from "@deks-js/document";
 import { ArrowUpCircle, Bot, Download, X } from "lucide-react";
 import {
   addSourceFolder,
   chooseDirectory,
   chooseImage,
   createProject,
+  deleteProject,
+  detectAgents,
   importAsset,
-  installBundledMcp,
+  installAgentSkills,
   installBundledSkills,
+  installManagedMcp,
   listProjects,
   onProjectChanged,
   openProject,
@@ -18,13 +21,12 @@ import {
   setLocale as persistLocale,
   watchProject,
 } from "./desktop-api";
-import { Editor } from "./editor/Editor";
+import { Editor, type SaveState } from "./editor/Editor";
 import { Home } from "./Home";
 import {
-  PRESENTATION_SIZES,
   createPresentation,
   type OpenProject,
-  type PresentationSizeId,
+  type PaletteKey,
   type ProjectChanged,
   type ProjectSummary,
 } from "./model";
@@ -38,11 +40,14 @@ export function App() {
   const [defaultRoot, setDefaultRoot] = useState("");
   const [sourceFolders, setSourceFolders] = useState<string[]>([]);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
-  const [statusKey, setStatusKey] = useState<TranslationKey>("status.local");
+  // Guardar es lo único del estado interno que la persona necesita ver, y sólo
+  // mientras pasa. Anunciar «carpeta abierta · observando cambios» describía la
+  // implementación del host, no algo sobre lo que se pueda actuar.
+  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const savedTimer = useRef<number>();
   const [activity, setActivity] = useState<ProjectChanged>();
   const [errorKey, setErrorKey] = useState<TranslationKey>();
   const [choosingFolder, setChoosingFolder] = useState(false);
-  const [agentSetupStatusKey, setAgentSetupStatusKey] = useState<TranslationKey>();
   const [update, setUpdate] = useState<UpdateState>({ status: "idle" });
   const pendingUpdate = useRef<Update>();
   const currentRef = useRef<OpenProject>();
@@ -51,9 +56,7 @@ export function App() {
   // Los textos se guardan como clave, no como frase ya traducida: cambiar de
   // idioma tiene que reescribir también el aviso que está en pantalla.
   const t = useMemo(() => translator(locale), [locale]);
-  const status = t(statusKey);
   const error = errorKey && t(errorKey);
-  const agentSetupStatus = agentSetupStatusKey && t(agentSetupStatusKey);
 
   const refreshProjects = useCallback(async (roots: string[]) => {
     try {
@@ -87,9 +90,7 @@ export function App() {
         setProject(refreshed);
         setActivity(event);
         setErrorKey(undefined);
-        setStatusKey(event.origin === "agent" ? "status.agentEdited" : "status.synced");
       } catch {
-        setStatusKey("status.syncFailed");
         setErrorKey("error.externalChange");
       }
     });
@@ -122,7 +123,6 @@ export function App() {
       const loaded = await openProject(path);
       await watchProject(loaded.path);
       setProject(loaded);
-      setStatusKey("status.watching");
     } catch {
       setErrorKey("error.open");
     } finally {
@@ -139,19 +139,21 @@ export function App() {
    * Crear no pregunta dónde: la presentación nace en la carpeta DEKS por
    * defecto, que es la que el inicio ya está mostrando.
    */
-  const createNew = async (name: string, size: PresentationSizeId) => {
-    const canvas = PRESENTATION_SIZES.find(({ id }) => id === size)!;
+  const createNew = async (
+    name: string,
+    canvas: { width: number; height: number },
+    palette: Record<PaletteKey, string>,
+  ) => {
     setChoosingFolder(true);
     setErrorKey(undefined);
     try {
       const created = await createProject(
         defaultRoot,
         name,
-        createPresentation(name, { width: canvas.width, height: canvas.height }),
+        createPresentation(name, canvas, crypto.randomUUID(), palette),
       );
       await watchProject(created.path);
       setProject(created);
-      setStatusKey("status.created");
       void refreshProjects([defaultRoot, ...sourceFolders]);
     } catch {
       setErrorKey("error.create");
@@ -185,6 +187,39 @@ export function App() {
     }
   };
 
+  /**
+   * Eliminar manda la carpeta a la papelera del sistema. La lista se refresca
+   * después de que el disco confirmó, no antes: una tarjeta que desapareciera
+   * mientras el borrado falla mentiría sobre lo que hay en la carpeta.
+   */
+  const removeProject = async (path: string) => {
+    setErrorKey(undefined);
+    try {
+      await deleteProject(path);
+      await refreshProjects([defaultRoot, ...sourceFolders]);
+    } catch {
+      setErrorKey("error.delete");
+    }
+  };
+
+  /**
+   * Cambiar el nombre desde el inicio es una edición como cualquier otra: se
+   * lee la revisión vigente, se aplica el comando canónico y se confirma con
+   * `expectedRevision`. Escribir el nombre a mano en el archivo saltaría el
+   * mismo contrato que respeta el editor y que vigilan los agentes.
+   */
+  const renameProject = async (path: string, name: string) => {
+    setErrorKey(undefined);
+    try {
+      const current = await openProject(path);
+      const next = applyDeksCommands(current.document, [{ type: "update-document", patch: { name } }]);
+      await saveProject(path, current.document.revision, next.document, [], []);
+      await refreshProjects([defaultRoot, ...sourceFolders]);
+    } catch {
+      setErrorKey("error.rename");
+    }
+  };
+
   const removeSource = async (path: string) => {
     try {
       const folders = await removeSourceFolder(path);
@@ -195,34 +230,14 @@ export function App() {
     }
   };
 
-  const installSkills = async () => {
-    setChoosingFolder(true);
-    setAgentSetupStatusKey(undefined);
-    try {
-      const destination = await chooseDirectory(t("home.installSkills"));
-      if (!destination) return;
-      await installBundledSkills(destination);
-      setAgentSetupStatusKey("ok.skills");
-    } catch (caught) {
-      setAgentSetupStatusKey(String(caught).includes("skill_already_exists") ? "error.skillsExist" : "error.skills");
-    } finally {
-      setChoosingFolder(false);
-    }
-  };
-
-  const installLocalMcp = async () => {
-    setChoosingFolder(true);
-    setAgentSetupStatusKey(undefined);
-    try {
-      const destination = await chooseDirectory(t("home.installMcp"));
-      if (!destination) return;
-      await installBundledMcp(destination);
-      setAgentSetupStatusKey("ok.mcp");
-    } catch (caught) {
-      setAgentSetupStatusKey(String(caught).includes("mcp_already_exists") ? "error.mcpExists" : "error.mcp");
-    } finally {
-      setChoosingFolder(false);
-    }
+  /**
+   * Instalación por carpeta: sigue existiendo para el agente que el host no
+   * sabe detectar. La global vive en la configuración, junto a la detección.
+   */
+  const installSkillsInFolder = async () => {
+    const destination = await chooseDirectory(t("home.installSkills"));
+    if (!destination) return;
+    await installBundledSkills(destination);
   };
 
   const updateBanner = (update.status === "available" || update.status === "downloading" || update.status === "ready")
@@ -268,14 +283,19 @@ export function App() {
           sourceFolders={sourceFolders}
           busy={choosingFolder}
           error={error}
-          agentSetupStatus={agentSetupStatus}
-          onCreate={(name, size) => void createNew(name, size)}
+          agents={{
+            detect: detectAgents,
+            installSkills: installAgentSkills,
+            installSkillsInFolder,
+            installMcp: installManagedMcp,
+          }}
+          onCreate={(name, canvas, palette) => void createNew(name, canvas, palette)}
           onOpenProject={(path) => void open(path)}
           onOpenFolder={() => void openExisting()}
           onAddSourceFolder={() => void addSource()}
           onRemoveSourceFolder={(path) => void removeSource(path)}
-          onInstallSkills={() => void installSkills()}
-          onInstallMcp={() => void installLocalMcp()}
+          onDeleteProject={(path) => void removeProject(path)}
+          onRenameProject={(path, name) => void renameProject(path, name)}
         />
       </>
     );
@@ -292,16 +312,20 @@ export function App() {
       changedSlideIds: string[],
       changedElementIds: string[],
     ) => {
-      setStatusKey("status.saving");
+      window.clearTimeout(savedTimer.current);
+      setSaveState("saving");
       setErrorKey(undefined);
       try {
         const saved = await saveProject(project.path, previousRevision, next, changedSlideIds, changedElementIds);
         setProject(saved);
-        setStatusKey("status.saved");
+        // «Guardado» se desvanece solo: es la confirmación de un instante, no
+        // un estado permanente que valga un rincón de la barra para siempre.
+        setSaveState("saved");
+        savedTimer.current = window.setTimeout(() => setSaveState("idle"), 1800);
         return saved.document;
       } catch (caught) {
         const conflict = String(caught).includes("revision_conflict");
-        setStatusKey(conflict ? "status.staleRevision" : "status.saveFailed");
+        setSaveState(conflict ? "conflict" : "failed");
         setErrorKey(conflict ? "error.conflict" : "error.write");
         throw caught;
       }
@@ -323,7 +347,7 @@ export function App() {
         t={t}
         source={project.document}
         persistence={persistence}
-        status={status}
+        saveState={saveState}
         projectPath={project.path}
         onImportAsset={async () => {
           try {
@@ -338,7 +362,7 @@ export function App() {
         onExit={() => {
           setProject(undefined);
           setActivity(undefined);
-          setStatusKey("status.local");
+          setSaveState("idle");
           void refreshProjects([defaultRoot, ...sourceFolders]);
         }}
       />

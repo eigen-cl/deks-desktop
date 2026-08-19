@@ -68,9 +68,14 @@ The Apple API key is decoded into a mode-0600 file under the runner's temporary 
 available only to the macOS job and is deleted in an `always()` cleanup step. GitHub's scoped token
 is exposed only to the final release job.
 
-The macOS job verifies what it produced before anything is published: `codesign` on the mounted app
-and on the DMG, `spctl --assess` against the Gatekeeper policy, and `xcrun stapler validate` for the
-notarization ticket. A DMG that fails any of these never reaches the release.
+Tauri notarizes and staples the `.app`; the DMG that carries it is signed but arrives without a
+ticket of its own. The macOS job therefore submits the container to `notarytool` and staples it
+before verifying anything. Without that, Gatekeeper has to ask Apple on first launch — fine on a
+connected machine, and a failure on the one that just downloaded the installer to set itself up.
+
+The job then verifies what it produced before anything is published: `codesign` on the mounted app
+and on the DMG, `spctl --assess` against the Gatekeeper policy, and `xcrun stapler validate` for both
+tickets. A DMG that fails any of these never reaches the release.
 
 ### Optional signed update channel
 

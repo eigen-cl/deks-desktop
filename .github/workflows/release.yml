@@ -164,6 +164,25 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run tauri -- build ${{ matrix.build_args }} ${{ env.DEKS_TAURI_CONFIG }}
+      # Tauri notariza y grapa el `.app`, no el contenedor. Un DMG sin ticket
+      # propio obliga a Gatekeeper a preguntarle a Apple en el primer arranque:
+      # funciona con red y falla sin ella, que es justo cuando alguien acaba de
+      # bajar el instalador para una máquina nueva. Se grapa aquí, no a mano.
+      - name: Notarize and staple the DMG itself
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          dmg_path=$(find src-tauri/target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)
+          test -n "$dmg_path"
+          xcrun notarytool submit "$dmg_path" \
+            --key "$APPLE_API_KEY_PATH" \
+            --key-id "$APPLE_API_KEY" \
+            --issuer "$APPLE_API_ISSUER" \
+            --wait
+          xcrun stapler staple "$dmg_path"
       - name: Verify macOS signature and notarization ticket
         if: runner.os == 'macOS'
         shell: bash
@@ -182,6 +201,8 @@ jobs:
           codesign --verify --deep --strict "$mounted_app"
           codesign --verify --strict "$dmg_path"
           spctl --assess --type execute --verbose "$mounted_app"
+          # Los dos tickets: el que Tauri grapa en la app y el del contenedor.
+          xcrun stapler validate "$mounted_app"
           xcrun stapler validate "$dmg_path"
       - name: Remove temporary Apple API key
         if: always() && runner.os == 'macOS'

@@ -84,6 +84,11 @@ test("release workflow builds all desktop platforms, notarizes macOS and publish
   assert.match(workflow, /--verify-tag --latest/);
   assert.doesNotMatch(workflow, /--draft/);
   assert.match(workflow, /spctl --assess --type execute/);
+  // Tauri grapa la app; el contenedor hay que notarizarlo y graparlo aparte, y
+  // la verificación exige los dos tickets, no uno.
+  assert.match(workflow, /xcrun notarytool submit "\$dmg_path"/);
+  assert.match(workflow, /xcrun stapler staple "\$dmg_path"/);
+  assert.match(workflow, /xcrun stapler validate "\$mounted_app"/);
   assert.match(workflow, /xcrun stapler validate "\$dmg_path"/);
   assert.match(workflow, /codesign --verify --strict "\$dmg_path"/);
   assert.doesNotMatch(workflow, /notarize=(true|false)/);

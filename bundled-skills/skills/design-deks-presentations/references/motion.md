@@ -14,7 +14,7 @@ Avoid arbitrary milliseconds per element. Keep stagger short and purposeful so t
 
 Set `in_preset` and `out_preset` on slides as the base presence behavior. Most destination-only and source-only elements should inherit those defaults. Shared elements should retain identity and animate through geometry or state changes.
 
-Use fade or `none` as the normal presence behavior for titles, body text, labels, citations, and supporting copy. Text may enter, exit, or remain; do not make it travel merely because the composition changes between checkpoints.
+Text may enter, exit, or remain; do not make it travel across the canvas merely because the composition changes between checkpoints. Do not reach for a fade either — see "How to animate text" below.
 
 Before authoring motion, write a section contract with:
 
@@ -32,6 +32,16 @@ Use an element-specific presence override only when its semantic role differs fr
 - use a glide when an object is displaced, transferred, or arrives from a meaningful direction;
 - use a fade when an idea is restated, revealed, or changes emphasis without implied movement;
 - use `none` only when an instantaneous change is intentional.
+
+## How to animate text
+
+Prefer `crop`, a short `slide`, or an honest `cut` over a fade. A fade on text reads as mush: letterforms are thin, high-contrast and full of holes, so a half-opacity word looks like a rendering defect rather than like something arriving.
+
+It is worst exactly where it is most tempting — when one line of text is replaced by another in the same position. The two strings cross-dissolve through each other, the descenders of the outgoing line overlap the caps of the incoming one, and for a third of a second the audience reads neither. A `crop` fixes this completely: the outgoing line leaves behind its own boundary while the incoming one arrives behind the same one, and at no point are two texts legible in the same place. A cut is also better than a fade here; it is abrupt, but abrupt is a choice the audience can follow.
+
+Fading text out is fine when nothing replaces it. A paragraph that is simply done, a citation that stops being relevant, a label whose object left — those can dissolve, because there is nothing behind them for the dissolve to muddy.
+
+The same reasoning applies to numbers. A figure that changes should count towards its new magnitude rather than cross-fade between two of them, and a figure that arrives should crop or count in rather than materialize at half opacity.
 
 Use `set_transition_override` only for timing that differs on one edge or to disable a shared animation. Do not configure every element individually: that makes motion brittle and hides default-motion defects.
 

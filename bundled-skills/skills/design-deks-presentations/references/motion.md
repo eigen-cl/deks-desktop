@@ -18,9 +18,14 @@ multiple of it:
 - `0.5` or `0.75`: supporting changes and quick acknowledgements;
 - `1.5` or `2`: deliberately weighty transformations.
 
-Avoid arbitrary milliseconds for duration. `delay_ms` is the exception and it is
-real milliseconds: use it sparingly, to let one element land after another, never
-to build an implicit choreography of many elements.
+Avoid arbitrary milliseconds. Delay has two units and they add: `delay_beats` is
+musical, so `1` waits exactly as long as a one-beat animation lasts and "start
+when that one ends" survives a change of tempo; `delay_ms` is absolute, for an
+offset that is about a specific instant rather than about the rhythm. Reach for
+beats first — a chain written in milliseconds falls silently out of step the day
+someone edits `motion_beat_ms`. Use either sparingly: a delay on one element lets
+it land after the one it depends on, not to build an implicit choreography of
+many.
 
 ## Let the presentation carry the flow
 
@@ -56,6 +61,7 @@ interpolation is jitter and must be removed.
 | `{kind: "fade"}` | opacity only | an idea is restated, revealed, or changes emphasis without implied movement |
 | `{kind: "slide", edge, distance?}` | travels from or towards an edge | an object is displaced, transferred, or arrives from a meaningful direction |
 | `{kind: "crop", edge}` | revealed inside its own box, which masks it | text and figures, especially when one replaces another in the same position |
+| `{kind: "wipe", edge}` | uncovered in place; only the mask edge moves | something that should feel already present and merely revealed — a chart drawn left to right, a list uncovered downwards |
 | `{kind: "scale", from}` | starts smaller or larger, in place | something is presented, magnified or lands as an object rather than as text |
 | `{kind: "none"}` | instantaneous | the change is meant to be a cut |
 | `{kind: "morph"}` (role `morph`) | interpolates both states | the element continues and its geometry or style carries the change |
@@ -69,7 +75,7 @@ Three parameters are worth knowing:
   slide reads as a nudge, an arrival in place, not an entrance from outside.
 - **`from`** on a scale. `0.8` to `0.95` reads as the object settling; below `0.5`
   it reads as a zoom and competes with the content.
-- **`crop` takes no distance.** The content always travels its own box, so the effect
+- **Neither `crop` nor `wipe` takes a distance.** The content always travels its own box, so the effect
   is the same whatever the element's size. Pick the `edge` for meaning: a figure that
   climbs reads better cropping up from `bottom`, a list item arriving under the one
   above it from `top`.
@@ -78,6 +84,18 @@ Three parameters are worth knowing:
 `[x1, y1, x2, y2]`. Prefer `ease-out` for entrances, `ease-in` for exits and
 `ease-in-out` for morphs; reach for a bezier only when a specific overshoot or
 deceleration is part of the story.
+
+## Crop or wipe?
+
+Both avoid the fade and both keep the element in place; they differ in what
+moves. A `crop` moves the content inside a fixed mask, so the element reads as
+arriving from behind a boundary — right when something new appears. A `wipe`
+moves the boundary over a fixed element, so it reads as uncovering something
+already there — right for a chart drawn left to right, a list uncovered
+downwards, a figure that should not appear to fly in.
+
+When one text replaces another in the same position, reach for `crop`: the
+outgoing line leaves behind the boundary the incoming one arrives behind.
 
 ## How to animate text
 

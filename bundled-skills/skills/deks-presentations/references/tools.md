@@ -96,11 +96,14 @@ Publishing is an external state change and does not create a snapshot: the publi
 - `apply_commands(presentation_id, commands, expected_revision, idempotency_key)` — apply 1–100 typed operations atomically as one revision and undo step. `update_slide` and `set_presentation_motion_beat` are not batch commands.
 - `undo_transaction(presentation_id, expected_revision, idempotency_key, transaction_id?)`
 
+Each role also carries two delays that **add**: `delay_beats` is a multiple of `motion_beat_ms`, so "start when the previous animation ends" is `delay_beats: 1` and stays true when the deck's tempo changes; `delay_ms` is absolute, for an offset that is about a specific instant. Both default to `0`. The wait is `motion_beat_ms * delay_beats + delay_ms`.
+
 `animation` is one object, discriminated by `kind`:
 
 - `{"kind": "none"}` and `{"kind": "fade"}` for `in` and `out`;
 - `{"kind": "slide", "edge": "left|right|top|bottom", "distance": 240}` — without `distance` the element travels completely off the canvas;
 - `{"kind": "crop", "edge": "left|right|top|bottom"}` — the element's own rectangle masks it and the content travels inside it, so the box never moves and opacity is never touched. It takes no `distance`: the travel is exactly the element's own extent on that axis;
+- `{"kind": "wipe", "edge": "left|right|top|bottom"}` — the opposite: the element does not move at all and the mask edge travels across it, uncovering it on the way in and covering it again on the way out. Also no `distance`;
 - `{"kind": "scale", "from": 0.8}`;
 - `{"kind": "morph"}` or `{"kind": "cut"}` for the `morph` role only.
 

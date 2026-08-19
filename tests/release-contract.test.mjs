@@ -35,7 +35,7 @@ test("the package contract enables native bundles and embeds only the two review
   const report = await verifyBundledSkills(root);
   assert.deepEqual(report.skills, ["deks-presentations", "design-deks-presentations"]);
   assert.equal(report.source.repository, "https://github.com/eigen-cl/deks-plugin");
-  assert.equal(report.source.version, "0.1.10");
+  assert.equal(report.source.version, "0.1.11");
   for (const relativePath of report.files) {
     assert.equal((await lstat(join(new URL("bundled-skills/", root).pathname, relativePath))).isSymbolicLink(), false);
   }

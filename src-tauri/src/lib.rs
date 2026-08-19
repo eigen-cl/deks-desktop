@@ -59,6 +59,38 @@ struct Settings {
     locale: Option<String>,
     #[serde(default)]
     source_folders: Vec<String>,
+    /// Instalaciones que el host se compromete a mantener al día. Cada
+    /// actualización de la app vuelve a copiar skills y a reescribir la
+    /// configuración MCP de estas entradas, y sólo de estas.
+    #[serde(default)]
+    managed_installs: Vec<ManagedInstall>,
+}
+
+/// Una instalación viva de DEKS dentro de un arnés: dónde quedaron las skills,
+/// qué archivo de configuración MCP se escribió y qué carpeta autoriza. Se
+/// guarda para poder actualizarla sola, no para reconstruirla adivinando.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ManagedInstall {
+    agent_id: String,
+    /// `global` para la configuración personal del arnés; `folder` para una
+    /// carpeta de trabajo concreta.
+    scope: String,
+    /// Carpeta elegida cuando `scope` es `folder`.
+    folder: Option<String>,
+    skills_path: String,
+    config_path: String,
+    projects_root: String,
+    /// Runtime al que apunta la configuración escrita. La app lo muestra para
+    /// el cliente que no sabe detectar y que hay que configurar a mano.
+    #[serde(default)]
+    runtime_path: String,
+}
+
+impl ManagedInstall {
+    fn same_target(&self, agent_id: &str, scope: &str, folder: Option<&str>) -> bool {
+        self.agent_id == agent_id && self.scope == scope && self.folder.as_deref() == folder
+    }
 }
 
 /// Lo justo para dibujar una tarjeta en el inicio. Deliberadamente no incluye
@@ -172,18 +204,16 @@ fn installation_stage(destination: &Path, kind: &str) -> PathBuf {
     destination.join(format!(".deks-{kind}-{}-{nonce}", std::process::id()))
 }
 
-fn install_bundled_skills_from(resource: &Path, destination: &Path) -> Result<Vec<&'static str>, String> {
+/// Deja las skills empaquetadas exactamente como vienen en esta versión de la
+/// app, creando la carpeta si hace falta y reemplazando una copia anterior. Es
+/// la operación de las carpetas administradas: ahí la copia vieja es de DEKS,
+/// no trabajo de nadie, y no actualizarla deja al agente con instrucciones que
+/// ya no describen el producto.
+fn sync_bundled_skills_from(resource: &Path, destination: &Path) -> Result<Vec<&'static str>, String> {
+    fs::create_dir_all(destination).map_err(|_| "destination_not_writable".to_string())?;
     let destination = fs::canonicalize(destination).map_err(|_| "destination_not_found".to_string())?;
-    if !destination.is_dir() {
-        return Err("destination_not_directory".into());
-    }
-    for skill in SKILL_NAMES {
-        if destination.join(skill).exists() {
-            return Err("skill_already_exists".into());
-        }
-    }
 
-    let stage = installation_stage(&destination, "skills-install");
+    let stage = installation_stage(&destination, "skills-sync");
     fs::create_dir(&stage).map_err(|_| "destination_not_writable".to_string())?;
     let result = (|| {
         for skill in SKILL_NAMES {
@@ -192,18 +222,124 @@ fn install_bundled_skills_from(resource: &Path, destination: &Path) -> Result<Ve
         let mut installed = Vec::new();
         for skill in SKILL_NAMES {
             let target = destination.join(skill);
+            let retired = destination.join(format!(".{skill}.deks-previous"));
+            let _ = fs::remove_dir_all(&retired);
+            // La copia vigente se aparta antes de poner la nueva: si el
+            // reemplazo falla a mitad, la carpeta nunca queda sin skill.
+            let had_previous = fs::rename(&target, &retired).is_ok();
             if let Err(error) = fs::rename(stage.join(skill), &target) {
-                for prior in installed {
-                    let _ = fs::remove_dir_all(destination.join(prior));
+                if had_previous {
+                    let _ = fs::rename(&retired, &target);
                 }
                 return Err(format!("bundle_install_failed:{error}"));
             }
+            let _ = fs::remove_dir_all(&retired);
             installed.push(skill);
         }
         Ok(installed)
     })();
     let _ = fs::remove_dir_all(stage);
     result
+}
+
+/// Entrada `deks` con la forma que espera cada arnés. Es el mismo contenido que
+/// la app muestra como fragmento manual, y por eso vive en un solo lugar.
+fn mcp_entry(format: &str, runtime: &Path, projects_root: &Path) -> (String, Value) {
+    let script = runtime.join("mcp").join("server.mjs").to_string_lossy().into_owned();
+    let root = projects_root.to_string_lossy().into_owned();
+    let env = serde_json::json!({ "DEKS_PROJECTS_ROOT": root });
+
+    match format {
+        "vscode-json" => (
+            "servers".into(),
+            serde_json::json!({ "type": "stdio", "command": "node", "args": [script], "env": env }),
+        ),
+        "zed-json" => (
+            "context_servers".into(),
+            serde_json::json!({ "source": "custom", "command": "node", "args": [script], "env": env }),
+        ),
+        "opencode-json" => (
+            "mcp".into(),
+            serde_json::json!({ "type": "local", "command": ["node", script], "enabled": true, "environment": env }),
+        ),
+        _ => (
+            "mcpServers".into(),
+            serde_json::json!({ "command": "node", "args": [script], "env": env }),
+        ),
+    }
+}
+
+fn toml_block(runtime: &Path, projects_root: &Path) -> String {
+    let script = runtime.join("mcp").join("server.mjs").to_string_lossy().into_owned();
+    format!(
+        "\n[mcp_servers.deks]\ncommand = \"node\"\nargs = [{}]\n\n[mcp_servers.deks.env]\nDEKS_PROJECTS_ROOT = {}\n",
+        Value::String(script),
+        Value::String(projects_root.to_string_lossy().into_owned()),
+    )
+}
+
+/// ¿Este archivo ya declara el servidor `deks`? Es lo que decide si el botón de
+/// instalar se apaga, así que mira el archivo real y no un recuerdo guardado.
+fn mcp_config_installed(format: &str, config_path: &Path) -> bool {
+    let Ok(text) = fs::read_to_string(config_path) else { return false };
+    if format == "codex-toml" {
+        return text.contains("[mcp_servers.deks]");
+    }
+    let (container, _) = mcp_entry(format, Path::new(""), Path::new(""));
+    serde_json::from_str::<Value>(&text)
+        .ok()
+        .and_then(|value| value.get(&container).and_then(|servers| servers.get("deks")).cloned())
+        .is_some()
+}
+
+/// Escribe **sólo** la entrada `deks` dentro de la configuración del arnés y
+/// conserva intacto todo lo demás: otros servidores MCP, ajustes del editor y
+/// claves que DEKS no entiende. Antes del primer cambio guarda una copia del
+/// archivo original al lado, para que revertir no dependa de nosotros.
+fn write_mcp_config(
+    format: &str,
+    config_path: &Path,
+    runtime: &Path,
+    projects_root: &Path,
+) -> Result<(), String> {
+    let parent = config_path.parent().ok_or("config_path_invalid")?;
+    fs::create_dir_all(parent).map_err(|_| "config_not_writable".to_string())?;
+    let existing = fs::read_to_string(config_path).ok();
+    if let Some(text) = existing.as_ref() {
+        let name = config_path.file_name().ok_or("config_path_invalid")?.to_string_lossy().into_owned();
+        let backup = parent.join(format!("{name}.deks-backup"));
+        if !backup.exists() {
+            let _ = fs::write(&backup, text);
+        }
+    }
+
+    if format == "codex-toml" {
+        let mut text = existing.unwrap_or_default();
+        if text.contains("[mcp_servers.deks]") {
+            // Reescribir TOML ajeno exigiría un parser completo; si la entrada
+            // ya está, se respeta la que la persona tiene.
+            return Ok(());
+        }
+        text.push_str(&toml_block(runtime, projects_root));
+        return fs::write(config_path, text).map_err(|_| "config_not_writable".to_string());
+    }
+
+    let (container, entry) = mcp_entry(format, runtime, projects_root);
+    let mut document = existing
+        .as_deref()
+        .and_then(|text| serde_json::from_str::<Value>(text).ok())
+        .filter(Value::is_object)
+        .unwrap_or_else(|| serde_json::json!({}));
+    let servers = document
+        .as_object_mut()
+        .ok_or("config_not_writable")?
+        .entry(container)
+        .or_insert_with(|| serde_json::json!({}));
+    if !servers.is_object() {
+        return Err("config_shape_unexpected".into());
+    }
+    servers.as_object_mut().ok_or("config_not_writable")?.insert("deks".into(), entry);
+    atomic_write(config_path, &document)
 }
 
 fn install_bundled_mcp_from(resource: &Path, destination: &Path) -> Result<PathBuf, String> {
@@ -427,55 +563,69 @@ struct ProjectChangedWire {
     changed_element_ids: Vec<String>,
 }
 
-/// Un agente que el host sabe reconocer. La detección es sólo lectura: mira si
-/// existe la carpeta de configuración que el propio agente crea al instalarse.
-/// Nunca escribe en la configuración de un cliente externo; para el MCP el host
-/// entrega el fragmento exacto y la persona decide dónde pegarlo.
+/// Un arnés que el host sabe reconocer. La detección es sólo lectura: mira si
+/// existe la carpeta de configuración que el propio programa crea al
+/// instalarse. Instalar sí escribe, pero únicamente la entrada `deks` de su
+/// configuración MCP y una copia de las skills, ambas bajo petición explícita.
 struct AgentTarget {
     id: &'static str,
-    /// Familia con la que se agrupa en pantalla: agentes parecidos comparten
+    /// Familia con la que se agrupa en pantalla: arneses parecidos comparten
     /// formato de configuración y se instalan igual.
     group: &'static str,
-    /// Formato del fragmento MCP que entiende ese agente.
+    /// Formato de la configuración MCP que entiende ese arnés.
     format: &'static str,
-    /// Carpetas que prueban que el agente está instalado, en orden de
+    /// Carpetas que prueban que el arnés está instalado, en orden de
     /// preferencia. La primera que exista define también dónde vive su config.
     homes: &'static [&'static str],
-    /// Archivo de configuración MCP, relativo a la carpeta detectada.
+    /// Archivo de configuración MCP personal, relativo a la carpeta detectada.
     config: &'static str,
-    /// Carpeta de skills global, relativa a la carpeta detectada. `None`
-    /// significa que ese agente no carga skills desde una carpeta conocida y
-    /// sólo admite instalación por carpeta elegida a mano.
-    skills: Option<&'static str>,
+    /// Carpeta de skills personal, relativa a la carpeta detectada.
+    skills: &'static str,
+    /// Configuración MCP dentro de una carpeta de trabajo. `None` cuando el
+    /// arnés no tiene noción de proyecto y sólo admite instalación global.
+    project_config: Option<&'static str>,
+    /// Carpeta de skills dentro de una carpeta de trabajo.
+    project_skills: Option<&'static str>,
 }
 
 const AGENT_TARGETS: [AgentTarget; 12] = [
-    AgentTarget { id: "claude-code", group: "claude", format: "mcp-servers-json", homes: &[".claude"], config: "../.claude.json", skills: Some("skills") },
-    AgentTarget { id: "claude-desktop", group: "claude", format: "mcp-servers-json", homes: &["Library/Application Support/Claude", "AppData/Roaming/Claude", ".config/Claude"], config: "claude_desktop_config.json", skills: None },
-    AgentTarget { id: "codex", group: "openai", format: "codex-toml", homes: &[".codex"], config: "config.toml", skills: None },
-    AgentTarget { id: "chatgpt-desktop", group: "openai", format: "codex-toml", homes: &["Library/Application Support/ChatGPT", "AppData/Roaming/ChatGPT"], config: "../../../.codex/config.toml", skills: None },
-    AgentTarget { id: "cursor", group: "editors", format: "mcp-servers-json", homes: &[".cursor"], config: "mcp.json", skills: None },
-    AgentTarget { id: "windsurf", group: "editors", format: "mcp-servers-json", homes: &[".codeium/windsurf"], config: "mcp_config.json", skills: None },
-    AgentTarget { id: "antigravity", group: "editors", format: "mcp-servers-json", homes: &[".antigravity", "Library/Application Support/Antigravity"], config: "mcp_config.json", skills: None },
-    AgentTarget { id: "vscode", group: "editors", format: "vscode-json", homes: &["Library/Application Support/Code/User", "AppData/Roaming/Code/User", ".config/Code/User"], config: "mcp.json", skills: None },
-    AgentTarget { id: "zed", group: "editors", format: "zed-json", homes: &[".config/zed"], config: "settings.json", skills: None },
-    AgentTarget { id: "continue", group: "editors", format: "mcp-servers-json", homes: &[".continue"], config: "config.json", skills: None },
-    AgentTarget { id: "opencode", group: "cli", format: "opencode-json", homes: &[".config/opencode"], config: "opencode.json", skills: None },
-    AgentTarget { id: "gemini-cli", group: "cli", format: "mcp-servers-json", homes: &[".gemini"], config: "settings.json", skills: None },
+    AgentTarget { id: "claude-code", group: "claude", format: "mcp-servers-json", homes: &[".claude"], config: "../.claude.json", skills: "skills", project_config: Some(".mcp.json"), project_skills: Some(".claude/skills") },
+    AgentTarget { id: "claude-desktop", group: "claude", format: "mcp-servers-json", homes: &["Library/Application Support/Claude", "AppData/Roaming/Claude", ".config/Claude"], config: "claude_desktop_config.json", skills: "skills", project_config: None, project_skills: None },
+    AgentTarget { id: "codex", group: "openai", format: "codex-toml", homes: &[".codex"], config: "config.toml", skills: "skills", project_config: Some(".codex/config.toml"), project_skills: Some(".codex/skills") },
+    AgentTarget { id: "chatgpt-desktop", group: "openai", format: "codex-toml", homes: &["Library/Application Support/ChatGPT", "AppData/Roaming/ChatGPT"], config: "../../../.codex/config.toml", skills: "../../../.codex/skills", project_config: None, project_skills: None },
+    AgentTarget { id: "cursor", group: "editors", format: "mcp-servers-json", homes: &[".cursor"], config: "mcp.json", skills: "skills", project_config: Some(".cursor/mcp.json"), project_skills: Some(".cursor/skills") },
+    AgentTarget { id: "windsurf", group: "editors", format: "mcp-servers-json", homes: &[".codeium/windsurf"], config: "mcp_config.json", skills: "skills", project_config: Some(".windsurf/mcp_config.json"), project_skills: Some(".windsurf/skills") },
+    AgentTarget { id: "antigravity", group: "editors", format: "mcp-servers-json", homes: &[".antigravity", "Library/Application Support/Antigravity"], config: "mcp_config.json", skills: "skills", project_config: Some(".antigravity/mcp_config.json"), project_skills: Some(".antigravity/skills") },
+    AgentTarget { id: "vscode", group: "editors", format: "vscode-json", homes: &["Library/Application Support/Code/User", "AppData/Roaming/Code/User", ".config/Code/User"], config: "mcp.json", skills: "skills", project_config: Some(".vscode/mcp.json"), project_skills: Some(".vscode/skills") },
+    AgentTarget { id: "zed", group: "editors", format: "zed-json", homes: &[".config/zed"], config: "settings.json", skills: "skills", project_config: Some(".zed/settings.json"), project_skills: Some(".zed/skills") },
+    AgentTarget { id: "continue", group: "editors", format: "mcp-servers-json", homes: &[".continue"], config: "config.json", skills: "skills", project_config: Some(".continue/config.json"), project_skills: Some(".continue/skills") },
+    AgentTarget { id: "opencode", group: "cli", format: "opencode-json", homes: &[".config/opencode"], config: "opencode.json", skills: "skills", project_config: Some("opencode.json"), project_skills: Some(".opencode/skills") },
+    AgentTarget { id: "gemini-cli", group: "cli", format: "mcp-servers-json", homes: &[".gemini"], config: "settings.json", skills: "skills", project_config: Some(".gemini/settings.json"), project_skills: Some(".gemini/skills") },
 ];
 
+fn agent_target(agent_id: &str) -> Result<&'static AgentTarget, String> {
+    AGENT_TARGETS.iter().find(|candidate| candidate.id == agent_id).ok_or_else(|| "agent_unknown".to_string())
+}
+
+/// Un arnés presente en este equipo. Sólo se construye para los detectados: un
+/// programa que no está instalado no es una decisión que la persona pueda tomar
+/// y sólo llenaría la pantalla.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DetectedAgent {
     id: String,
     group: String,
     format: String,
-    /// Carpeta del agente cuando existe. Sin ella el agente aparece igual, pero
-    /// como no instalado: la lista completa explica qué se puede conectar.
-    home: Option<String>,
-    config_path: Option<String>,
-    skills_path: Option<String>,
+    home: String,
+    config_path: String,
+    skills_path: String,
+    /// `true` cuando skills y MCP están puestos: es lo que apaga el botón.
+    installed: bool,
     skills_installed: bool,
+    mcp_installed: bool,
+    /// `false` cuando el arnés no tiene carpetas de proyecto y sólo admite la
+    /// instalación global.
+    supports_folder: bool,
 }
 
 /// Normaliza `a/../b` sin tocar el disco: los destinos declarados suben un
@@ -494,43 +644,119 @@ fn normalize(path: &Path) -> PathBuf {
     result
 }
 
+/// Carpeta real del arnés en este equipo, o `None` si no está instalado.
+fn agent_home(target: &AgentTarget, home: &Path) -> Option<PathBuf> {
+    target.homes.iter().map(|relative| home.join(relative)).find(|candidate| candidate.is_dir())
+}
+
+fn skills_present(destination: &Path) -> bool {
+    SKILL_NAMES.iter().all(|skill| destination.join(skill).is_dir())
+}
+
 fn detect_agents_in(home: &Path) -> Vec<DetectedAgent> {
     AGENT_TARGETS
         .iter()
-        .map(|target| {
-            let detected = target.homes.iter().map(|relative| home.join(relative)).find(|candidate| candidate.is_dir());
-            let base = detected.clone().unwrap_or_else(|| home.join(target.homes[0]));
-            let skills_path = target.skills.map(|relative| normalize(&base.join(relative)));
-            DetectedAgent {
+        .filter_map(|target| {
+            let base = agent_home(target, home)?;
+            let skills_path = normalize(&base.join(target.skills));
+            let config_path = normalize(&base.join(target.config));
+            let skills_installed = skills_present(&skills_path);
+            let mcp_installed = mcp_config_installed(target.format, &config_path);
+            Some(DetectedAgent {
                 id: target.id.into(),
                 group: target.group.into(),
                 format: target.format.into(),
-                home: detected.as_ref().map(|path| path.to_string_lossy().into_owned()),
-                config_path: Some(normalize(&base.join(target.config)).to_string_lossy().into_owned()),
-                skills_installed: skills_path
-                    .as_ref()
-                    .is_some_and(|path| SKILL_NAMES.iter().any(|skill| path.join(skill).is_dir())),
-                skills_path: skills_path.map(|path| path.to_string_lossy().into_owned()),
-            }
+                home: base.to_string_lossy().into_owned(),
+                config_path: config_path.to_string_lossy().into_owned(),
+                skills_path: skills_path.to_string_lossy().into_owned(),
+                installed: skills_installed && mcp_installed,
+                skills_installed,
+                mcp_installed,
+                supports_folder: target.project_config.is_some(),
+            })
         })
         .collect()
 }
 
-/// Instala las skills en la carpeta global del agente, creándola si el agente
-/// todavía no la tiene. La instalación sigue sin reemplazar nada: si una skill
-/// ya está ahí, se avisa en vez de pisar el trabajo de otra versión.
-fn install_agent_skills_in(resource: &Path, home: &Path, agent_id: &str) -> Result<Vec<&'static str>, String> {
-    let target = AGENT_TARGETS.iter().find(|candidate| candidate.id == agent_id).ok_or("agent_unknown")?;
-    let relative = target.skills.ok_or("agent_without_skills_folder")?;
-    let base = target
-        .homes
+/// Dónde quedan skills y configuración para un arnés y un alcance. Global usa
+/// las carpetas personales del programa; `folder` usa las convenciones de
+/// proyecto del mismo programa dentro de la carpeta elegida.
+fn install_paths(
+    target: &AgentTarget,
+    home: &Path,
+    folder: Option<&Path>,
+) -> Result<(PathBuf, PathBuf), String> {
+    match folder {
+        None => {
+            let base = agent_home(target, home).ok_or("agent_not_installed")?;
+            Ok((normalize(&base.join(target.skills)), normalize(&base.join(target.config))))
+        }
+        Some(folder) => {
+            if !folder.is_dir() {
+                return Err("folder_not_found".into());
+            }
+            let config = target.project_config.ok_or("agent_without_folder_scope")?;
+            let skills = target.project_skills.ok_or("agent_without_folder_scope")?;
+            Ok((normalize(&folder.join(skills)), normalize(&folder.join(config))))
+        }
+    }
+}
+
+/// Instala o actualiza DEKS en un arnés: siempre las skills y siempre la
+/// entrada MCP, porque la mitad de la instalación no sirve para nada. Devuelve
+/// la entrada que el host se compromete a mantener al día.
+fn install_agent_in(
+    resource: &Path,
+    home: &Path,
+    runtime: &Path,
+    agent_id: &str,
+    folder: Option<&Path>,
+    projects_root: &Path,
+) -> Result<ManagedInstall, String> {
+    let target = agent_target(agent_id)?;
+    let (skills_path, config_path) = install_paths(target, home, folder)?;
+    sync_bundled_skills_from(resource, &skills_path)?;
+    write_mcp_config(target.format, &config_path, runtime, projects_root)?;
+    Ok(ManagedInstall {
+        agent_id: agent_id.to_string(),
+        scope: if folder.is_some() { "folder".into() } else { "global".into() },
+        folder: folder.map(|path| path.to_string_lossy().into_owned()),
+        skills_path: skills_path.to_string_lossy().into_owned(),
+        config_path: config_path.to_string_lossy().into_owned(),
+        projects_root: projects_root.to_string_lossy().into_owned(),
+        runtime_path: runtime.to_string_lossy().into_owned(),
+    })
+}
+
+/// Vuelve a dejar al día todo lo que la persona pidió mantener. Se ejecuta al
+/// arrancar: una actualización de la app trae skills nuevas y estas carpetas
+/// tienen que recibirlas sin que nadie se acuerde de volver a instalarlas.
+fn sync_managed_installs_in(
+    resource: &Path,
+    runtime: &Path,
+    installs: &[ManagedInstall],
+) -> Vec<ManagedInstall> {
+    installs
         .iter()
-        .map(|candidate| home.join(candidate))
-        .find(|candidate| candidate.is_dir())
-        .ok_or("agent_not_installed")?;
-    let destination = normalize(&base.join(relative));
-    fs::create_dir_all(&destination).map_err(|_| "destination_not_writable".to_string())?;
-    install_bundled_skills_from(resource, &destination)
+        .filter(|install| {
+            let Ok(target) = agent_target(&install.agent_id) else { return false };
+            let skills = Path::new(&install.skills_path);
+            let config = Path::new(&install.config_path);
+            // Una carpeta que ya no existe dejó de ser una promesa: se cae de la
+            // lista en vez de recrear árboles donde alguien borró su trabajo.
+            let alive = install
+                .folder
+                .as_ref()
+                .map_or(skills.parent().is_some_and(Path::is_dir), |folder| Path::new(folder).is_dir());
+            if !alive {
+                return false;
+            }
+            let root = PathBuf::from(&install.projects_root);
+            sync_bundled_skills_from(resource, skills).is_ok()
+                && write_mcp_config(target.format, config, runtime, &root).is_ok()
+        })
+        .map(|install| ManagedInstall { runtime_path: runtime.to_string_lossy().into_owned(), ..install.clone() })
+        .collect()
 }
 
 /// El runtime administrado vive en el directorio de datos de la app, no en una
@@ -724,6 +950,7 @@ fn read_workspace(app: tauri::AppHandle) -> Result<Value, String> {
         "defaultRoot": default_root.to_string_lossy(),
         "locale": settings.locale,
         "sourceFolders": settings.source_folders,
+        "managedInstalls": settings.managed_installs,
     }))
 }
 
@@ -758,22 +985,6 @@ fn remove_source_folder(app: tauri::AppHandle, path: String) -> Result<Vec<Strin
     Ok(settings.source_folders)
 }
 
-#[cfg(feature = "desktop")]
-#[tauri::command]
-fn install_bundled_skills(app: tauri::AppHandle, destination_path: String) -> Result<Vec<String>, String> {
-    let resources = app.path().resource_dir().map_err(|_| "resources_unavailable".to_string())?;
-    install_bundled_skills_from(&resources.join("bundled-skills"), Path::new(&destination_path))
-        .map(|skills| skills.into_iter().map(str::to_string).collect())
-}
-
-#[cfg(feature = "desktop")]
-#[tauri::command]
-fn install_bundled_mcp(app: tauri::AppHandle, destination_path: String) -> Result<String, String> {
-    let resources = app.path().resource_dir().map_err(|_| "resources_unavailable".to_string())?;
-    install_bundled_mcp_from(&resources.join("bundled-mcp"), Path::new(&destination_path))
-        .map(|path| path.to_string_lossy().into_owned())
-}
-
 /// Borrar manda la carpeta a la papelera del sistema, nunca la destruye. Una
 /// presentación es trabajo de alguien: si el borrado fue un error, tiene que
 /// poder deshacerse fuera de DEKS. `project_path` ya exige que la carpeta sea
@@ -793,8 +1004,8 @@ fn read_project_cover(path: String) -> Result<Value, String> {
     cover_document(&project_path(&path)?)
 }
 
-/// Qué agentes hay en este equipo. Sólo lee: la app nunca escribe en la
-/// configuración de un cliente externo sin que la persona la pegue ella misma.
+/// Qué arneses hay en este equipo. Sólo lee, y sólo devuelve los que existen:
+/// un programa que no está instalado no es una decisión que nadie pueda tomar.
 #[cfg(feature = "desktop")]
 #[tauri::command]
 fn detect_agents(app: tauri::AppHandle) -> Result<Vec<DetectedAgent>, String> {
@@ -802,25 +1013,90 @@ fn detect_agents(app: tauri::AppHandle) -> Result<Vec<DetectedAgent>, String> {
     Ok(detect_agents_in(&home))
 }
 
+/// Runtime administrado, instalándolo si todavía no estaba. Cualquier
+/// instalación en un arnés lo necesita apuntado desde su configuración.
 #[cfg(feature = "desktop")]
-#[tauri::command]
-fn install_agent_skills(app: tauri::AppHandle, agent_id: String) -> Result<Vec<String>, String> {
-    let resources = app.path().resource_dir().map_err(|_| "resources_unavailable".to_string())?;
-    let home = app.path().home_dir().map_err(|_| "home_dir_unavailable".to_string())?;
-    install_agent_skills_in(&resources.join("bundled-skills"), &home, &agent_id)
-        .map(|skills| skills.into_iter().map(str::to_string).collect())
-}
-
-/// Instala el runtime local en el directorio de datos de la app y devuelve su
-/// ruta. Si ya estaba, no lo reemplaza: devuelve la misma ruta y avisa que no
-/// hubo instalación nueva.
-#[cfg(feature = "desktop")]
-#[tauri::command]
-fn install_managed_mcp(app: tauri::AppHandle) -> Result<Value, String> {
+fn managed_runtime(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let resources = app.path().resource_dir().map_err(|_| "resources_unavailable".to_string())?;
     let data = app.path().app_local_data_dir().map_err(|_| "data_dir_unavailable".to_string())?;
-    let (path, installed) = install_managed_mcp_in(&resources.join("bundled-mcp"), &data)?;
-    Ok(serde_json::json!({ "path": path.to_string_lossy(), "installed": installed }))
+    install_managed_mcp_in(&resources.join("bundled-mcp"), &data).map(|(path, _)| path)
+}
+
+/// Instala MCP y skills en un arnés, global o dentro de una carpeta. Nunca una
+/// sola de las dos: el agente necesita el servidor para tocar la presentación y
+/// las skills para saber cómo hacerlo bien.
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn install_agent(
+    app: tauri::AppHandle,
+    agent_id: String,
+    folder: Option<String>,
+    projects_root: String,
+) -> Result<Vec<ManagedInstall>, String> {
+    let resources = app.path().resource_dir().map_err(|_| "resources_unavailable".to_string())?;
+    let home = app.path().home_dir().map_err(|_| "home_dir_unavailable".to_string())?;
+    let runtime = managed_runtime(&app)?;
+    let folder_path = folder.as_deref().map(PathBuf::from);
+    // Una instalación por carpeta autoriza esa misma carpeta: es lo que la
+    // persona acaba de elegir y no hay que preguntarle dos veces por lo mismo.
+    let root = folder_path.clone().unwrap_or_else(|| PathBuf::from(&projects_root));
+    let install = install_agent_in(
+        &resources.join("bundled-skills"),
+        &home,
+        &runtime,
+        &agent_id,
+        folder_path.as_deref(),
+        &root,
+    )?;
+
+    let directory = settings_directory(&app)?;
+    let mut settings = read_settings_from(&directory);
+    settings
+        .managed_installs
+        .retain(|existing| !existing.same_target(&install.agent_id, &install.scope, install.folder.as_deref()));
+    settings.managed_installs.push(install);
+    write_settings_to(&directory, &settings)?;
+    Ok(settings.managed_installs)
+}
+
+/// Deja de mantener una carpeta. No borra nada: las skills copiadas y la
+/// configuración escrita siguen donde están, sólo dejan de actualizarse solas.
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn forget_managed_install(
+    app: tauri::AppHandle,
+    agent_id: String,
+    scope: String,
+    folder: Option<String>,
+) -> Result<Vec<ManagedInstall>, String> {
+    let directory = settings_directory(&app)?;
+    let mut settings = read_settings_from(&directory);
+    settings
+        .managed_installs
+        .retain(|existing| !existing.same_target(&agent_id, &scope, folder.as_deref()));
+    write_settings_to(&directory, &settings)?;
+    Ok(settings.managed_installs)
+}
+
+/// Reinstala skills y configuración en todo lo que la persona pidió mantener.
+/// El inicio lo llama una vez: así una app actualizada actualiza también a los
+/// agentes que ya la usaban, sin que nadie tenga que acordarse.
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn sync_managed_installs(app: tauri::AppHandle) -> Result<Vec<ManagedInstall>, String> {
+    let directory = settings_directory(&app)?;
+    let mut settings = read_settings_from(&directory);
+    if settings.managed_installs.is_empty() {
+        return Ok(settings.managed_installs);
+    }
+    let resources = app.path().resource_dir().map_err(|_| "resources_unavailable".to_string())?;
+    let runtime = managed_runtime(&app)?;
+    let alive = sync_managed_installs_in(&resources.join("bundled-skills"), &runtime, &settings.managed_installs);
+    if alive != settings.managed_installs {
+        settings.managed_installs = alive;
+        write_settings_to(&directory, &settings)?;
+    }
+    Ok(settings.managed_installs)
 }
 
 #[cfg(feature = "desktop")]
@@ -867,13 +1143,12 @@ pub fn run() {
             set_locale,
             add_source_folder,
             remove_source_folder,
-            install_bundled_skills,
-            install_bundled_mcp,
             read_project_cover,
             delete_project,
             detect_agents,
-            install_agent_skills,
-            install_managed_mcp,
+            install_agent,
+            forget_managed_install,
+            sync_managed_installs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running DEKS Desktop");
@@ -937,7 +1212,7 @@ mod tests {
     }
 
     #[test]
-    fn bundled_skills_install_as_complete_directories_without_overwriting() {
+    fn syncing_skills_replaces_the_previous_copy_with_complete_directories() {
         let resource = tempfile::tempdir().unwrap();
         let destination = tempfile::tempdir().unwrap();
         for skill in SKILL_NAMES {
@@ -947,14 +1222,18 @@ mod tests {
             fs::write(skill_path.join("guide.md"), "guide").unwrap();
         }
 
-        let installed = install_bundled_skills_from(resource.path(), destination.path()).unwrap();
+        let installed = sync_bundled_skills_from(resource.path(), &destination.path().join("skills")).unwrap();
         assert_eq!(installed, SKILL_NAMES);
-        assert_eq!(fs::read_to_string(destination.path().join(SKILL_NAMES[0]).join("references/guide.md")).unwrap(), "guide");
+        let skills = destination.path().join("skills");
+        assert_eq!(fs::read_to_string(skills.join(SKILL_NAMES[0]).join("references/guide.md")).unwrap(), "guide");
 
-        let existing = destination.path().join(SKILL_NAMES[0]).join("SKILL.md");
-        fs::write(&existing, "personalized").unwrap();
-        assert_eq!(install_bundled_skills_from(resource.path(), destination.path()).unwrap_err(), "skill_already_exists");
-        assert_eq!(fs::read_to_string(existing).unwrap(), "personalized");
+        // Una versión nueva reemplaza la copia anterior entera: nada de la
+        // instalación vieja sobrevive dentro de la carpeta de una skill.
+        fs::write(resource.path().join("skills").join(SKILL_NAMES[0]).join("SKILL.md"), "v2").unwrap();
+        fs::remove_file(resource.path().join("skills").join(SKILL_NAMES[0]).join("references/guide.md")).unwrap();
+        sync_bundled_skills_from(resource.path(), &skills).unwrap();
+        assert_eq!(fs::read_to_string(skills.join(SKILL_NAMES[0]).join("SKILL.md")).unwrap(), "v2");
+        assert!(!skills.join(SKILL_NAMES[0]).join("references/guide.md").exists());
     }
 
     #[test]
@@ -1011,52 +1290,145 @@ mod tests {
     }
 
     #[test]
-    fn an_agent_is_detected_by_the_folder_it_creates_and_never_invented() {
+    fn only_the_harnesses_present_on_this_machine_reach_the_screen() {
         let home = tempfile::tempdir().unwrap();
         fs::create_dir_all(home.path().join(".claude")).unwrap();
 
         let agents = detect_agents_in(home.path());
-        let claude = agents.iter().find(|agent| agent.id == "claude-code").unwrap();
-        assert!(claude.home.is_some());
-        assert!(!claude.skills_installed);
+        assert_eq!(agents.len(), 1);
+        let claude = &agents[0];
+        assert_eq!(claude.id, "claude-code");
+        assert!(!claude.installed);
+        assert!(claude.supports_folder);
         // La ruta se muestra tal cual se abre: subir un nivel no puede llegar a
         // pantalla como `~/.claude/../.claude.json`.
-        assert_eq!(claude.config_path.as_deref().unwrap(), home.path().join(".claude.json").to_string_lossy());
-        assert_eq!(claude.skills_path.as_deref().unwrap(), home.path().join(".claude/skills").to_string_lossy());
-
-        // Un agente ausente sigue en la lista, pero sin carpeta: el catálogo
-        // completo explica qué se puede conectar sin fingir instalaciones.
-        let cursor = agents.iter().find(|agent| agent.id == "cursor").unwrap();
-        assert!(cursor.home.is_none());
-        assert_eq!(agents.iter().filter(|agent| agent.group == "claude").count(), 2);
+        assert_eq!(claude.config_path, home.path().join(".claude.json").to_string_lossy());
+        assert_eq!(claude.skills_path, home.path().join(".claude/skills").to_string_lossy());
     }
 
     #[test]
-    fn agent_skills_install_globally_only_for_an_installed_agent() {
+    fn installing_a_harness_writes_skills_and_the_mcp_entry_together() {
         let resource = tempfile::tempdir().unwrap();
         let home = tempfile::tempdir().unwrap();
+        let runtime = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
         seed_skill_bundle(resource.path());
 
         assert_eq!(
-            install_agent_skills_in(resource.path(), home.path(), "claude-code").unwrap_err(),
+            install_agent_in(resource.path(), home.path(), runtime.path(), "claude-code", None, root.path())
+                .unwrap_err(),
             "agent_not_installed",
-        );
-        assert_eq!(
-            install_agent_skills_in(resource.path(), home.path(), "cursor").unwrap_err(),
-            "agent_without_skills_folder",
         );
 
         fs::create_dir_all(home.path().join(".claude")).unwrap();
-        let installed = install_agent_skills_in(resource.path(), home.path(), "claude-code").unwrap();
-        assert_eq!(installed, SKILL_NAMES);
-        assert!(home.path().join(".claude/skills").join(SKILL_NAMES[0]).join("SKILL.md").is_file());
-        assert!(detect_agents_in(home.path()).iter().find(|agent| agent.id == "claude-code").unwrap().skills_installed);
+        let install =
+            install_agent_in(resource.path(), home.path(), runtime.path(), "claude-code", None, root.path()).unwrap();
 
-        // Una segunda instalación no pisa lo que ya está.
+        assert_eq!(install.scope, "global");
+        assert!(install.folder.is_none());
+        assert!(home.path().join(".claude/skills").join(SKILL_NAMES[0]).join("SKILL.md").is_file());
+
+        let config: Value =
+            serde_json::from_slice(&fs::read(home.path().join(".claude.json")).unwrap()).unwrap();
+        assert_eq!(config["mcpServers"]["deks"]["command"], "node");
         assert_eq!(
-            install_agent_skills_in(resource.path(), home.path(), "claude-code").unwrap_err(),
-            "skill_already_exists",
+            config["mcpServers"]["deks"]["env"]["DEKS_PROJECTS_ROOT"],
+            Value::String(root.path().to_string_lossy().into_owned()),
         );
+
+        // Con las dos mitades puestas, el arnés ya aparece instalado.
+        let detected = detect_agents_in(home.path());
+        assert!(detected[0].installed);
+        assert!(detected[0].skills_installed && detected[0].mcp_installed);
+    }
+
+    #[test]
+    fn writing_the_mcp_entry_preserves_the_rest_of_a_foreign_configuration() {
+        let home = tempfile::tempdir().unwrap();
+        let runtime = tempfile::tempdir().unwrap();
+        let config = home.path().join("mcp.json");
+        fs::write(
+            &config,
+            r#"{"mcpServers":{"otro":{"command":"python"}},"theme":"dark"}"#,
+        )
+        .unwrap();
+
+        write_mcp_config("mcp-servers-json", &config, runtime.path(), home.path()).unwrap();
+
+        let written: Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
+        assert_eq!(written["mcpServers"]["otro"]["command"], "python");
+        assert_eq!(written["theme"], "dark");
+        assert!(written["mcpServers"]["deks"].is_object());
+        // El archivo original queda al lado antes del primer cambio.
+        assert!(home.path().join("mcp.json.deks-backup").is_file());
+        assert!(mcp_config_installed("mcp-servers-json", &config));
+    }
+
+    #[test]
+    fn a_folder_install_uses_the_project_conventions_and_authorizes_that_folder() {
+        let resource = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let runtime = tempfile::tempdir().unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        seed_skill_bundle(resource.path());
+        fs::create_dir_all(home.path().join(".claude")).unwrap();
+
+        let install = install_agent_in(
+            resource.path(),
+            home.path(),
+            runtime.path(),
+            "claude-code",
+            Some(folder.path()),
+            folder.path(),
+        )
+        .unwrap();
+
+        assert_eq!(install.scope, "folder");
+        assert_eq!(install.folder.as_deref().unwrap(), folder.path().to_string_lossy());
+        assert!(folder.path().join(".claude/skills").join(SKILL_NAMES[0]).join("SKILL.md").is_file());
+        let config: Value = serde_json::from_slice(&fs::read(folder.path().join(".mcp.json")).unwrap()).unwrap();
+        assert_eq!(
+            config["mcpServers"]["deks"]["env"]["DEKS_PROJECTS_ROOT"],
+            Value::String(folder.path().to_string_lossy().into_owned()),
+        );
+
+        // La instalación global no se tocó: son alcances distintos.
+        assert!(!home.path().join(".claude/skills").join(SKILL_NAMES[0]).is_dir());
+    }
+
+    #[test]
+    fn a_managed_folder_receives_the_skills_of_the_new_version_and_drops_when_it_disappears() {
+        let resource = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let runtime = tempfile::tempdir().unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        seed_skill_bundle(resource.path());
+        fs::create_dir_all(home.path().join(".claude")).unwrap();
+
+        let install = install_agent_in(
+            resource.path(),
+            home.path(),
+            runtime.path(),
+            "claude-code",
+            Some(folder.path()),
+            folder.path(),
+        )
+        .unwrap();
+        let skill = folder.path().join(".claude/skills").join(SKILL_NAMES[0]).join("SKILL.md");
+        assert_eq!(fs::read_to_string(&skill).unwrap(), SKILL_NAMES[0]);
+
+        // Una versión nueva de la app trae skills nuevas: la carpeta mantenida
+        // las recibe sin que nadie vuelva a instalarlas.
+        fs::write(resource.path().join("skills").join(SKILL_NAMES[0]).join("SKILL.md"), "v2").unwrap();
+        let alive = sync_managed_installs_in(resource.path(), runtime.path(), &[install.clone()]);
+        assert_eq!(alive, vec![install.clone()]);
+        assert_eq!(fs::read_to_string(&skill).unwrap(), "v2");
+
+        // Una carpeta borrada deja de ser una promesa; no se recrea.
+        let gone = folder.path().to_path_buf();
+        drop(folder);
+        assert!(!gone.is_dir());
+        assert!(sync_managed_installs_in(resource.path(), runtime.path(), &[install]).is_empty());
     }
 
     #[test]
@@ -1164,7 +1536,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         assert_eq!(read_settings_from(directory.path()).source_folders, Vec::<String>::new());
 
-        let settings = Settings { locale: Some("en".into()), source_folders: vec!["/tmp/decks".into()] };
+        let settings = Settings { locale: Some("en".into()), source_folders: vec!["/tmp/decks".into()], managed_installs: Vec::new() };
         write_settings_to(directory.path(), &settings).unwrap();
         let read = read_settings_from(directory.path());
         assert_eq!(read.locale.as_deref(), Some("en"));

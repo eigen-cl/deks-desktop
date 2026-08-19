@@ -1,19 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, ClipboardCopy, PackagePlus, ServerCog } from "lucide-react";
-import { groupAgents, mcpConfigSnippet } from "../agents";
-import type { DetectedAgent, ManagedMcp, McpConfigFormat } from "../model";
+import { Check, ClipboardCopy, FolderPlus, PackagePlus, X } from "lucide-react";
+import { mcpConfigSnippet } from "../agents";
+import type { DetectedAgent, ManagedInstall, McpConfigFormat } from "../model";
 import { SelectField } from "../ui/fields";
-import type { Translate } from "../i18n";
+import type { Translate, TranslationKey } from "../i18n";
 
 export interface AgentSetupProps {
   t: Translate;
-  /** Carpetas que el MCP puede autorizar. La primera es la raíz por defecto. */
-  roots: string[];
+  /** Carpeta de presentaciones que autoriza una instalación global. */
+  projectsRoot: string;
   busy?: boolean;
+  managed: ManagedInstall[];
   detect(): Promise<DetectedAgent[]>;
-  installSkills(agentId: string): Promise<unknown>;
-  installSkillsInFolder(): Promise<unknown>;
-  installMcp(): Promise<ManagedMcp>;
+  /** Sin carpeta instala global; con carpeta instala dentro de ella. */
+  install(agentId: string, folder?: string): Promise<ManagedInstall[]>;
+  forget(agentId: string, scope: "global" | "folder", folder: string | null): Promise<ManagedInstall[]>;
+  chooseFolder(): Promise<string | undefined>;
 }
 
 const FORMAT_LABELS: Record<McpConfigFormat, string> = {
@@ -25,157 +27,186 @@ const FORMAT_LABELS: Record<McpConfigFormat, string> = {
 };
 
 /**
- * Instalación para agentes. Detecta qué hay en el equipo y agrupa a los que se
- * configuran igual, porque la diferencia entre Cursor y Windsurf no es el
- * formato sino dónde vive el archivo.
+ * Conectar un arnés es una sola decisión, no un formulario. La pantalla muestra
+ * lo que hay en este equipo y dos formas de instalar; el servidor MCP y las
+ * skills van siempre juntos porque la mitad de la instalación no sirve de nada:
+ * sin MCP el agente no puede tocar la presentación, y sin skills no sabe cómo.
  *
- * Las skills se copian; la configuración MCP no. DEKS nunca escribe dentro del
- * archivo de otro programa —fusionar a ciegas puede romper conexiones que ya
- * existían— así que entrega el fragmento exacto y la ruta donde pegarlo.
+ * Los arneses ausentes no aparecen. El catálogo completo respondía una pregunta
+ * que nadie hizo y escondía las dos filas accionables entre diez inertes.
  */
-export function AgentSetup({ t, roots, busy = false, detect, installSkills, installSkillsInFolder, installMcp }: AgentSetupProps) {
-  const [agents, setAgents] = useState<DetectedAgent[]>([]);
+export function AgentSetup({
+  t,
+  projectsRoot,
+  busy = false,
+  managed,
+  detect,
+  install,
+  forget,
+  chooseFolder,
+}: AgentSetupProps) {
+  const [agents, setAgents] = useState<DetectedAgent[]>();
+  const [installs, setInstalls] = useState(managed);
+  const [pending, setPending] = useState<string>();
+  const [message, setMessage] = useState<{ key: TranslationKey; tone: "ok" | "error" }>();
   const [format, setFormat] = useState<McpConfigFormat>("mcp-servers-json");
-  const [configPath, setConfigPath] = useState<string>();
-  const [root, setRoot] = useState(roots[0] ?? "");
-  const [runtime, setRuntime] = useState<ManagedMcp>();
-  const [message, setMessage] = useState<string>();
   const [copied, setCopied] = useState(false);
 
   const refresh = () => { void detect().then(setAgents).catch(() => setAgents([])); };
   useEffect(refresh, [detect]);
-  useEffect(() => { if (!root && roots[0]) setRoot(roots[0]); }, [root, roots]);
+  useEffect(() => setInstalls(managed), [managed]);
 
-  const groups = useMemo(() => groupAgents(agents), [agents]);
-  // Antes de instalar y de elegir carpeta el fragmento ya se ve, con marcadores
-  // evidentes: enseña la forma exacta sin fingir una ruta que todavía no existe.
-  const snippet = mcpConfigSnippet(format, runtime?.path ?? "<DEKS_RUNTIME_PATH>", root || "<DEKS_PROJECTS_ROOT>");
+  const folders = useMemo(() => installs.filter((entry) => entry.scope === "folder"), [installs]);
 
-  const install = (action: Promise<unknown>, ok: string) => {
+  const run = (agentId: string, scope: "global" | "folder", action: Promise<ManagedInstall[]>) => {
+    setPending(`${agentId}:${scope}`);
     setMessage(undefined);
     void action
-      .then(() => { setMessage(ok); refresh(); })
+      .then((next) => {
+        setInstalls(next);
+        setMessage({ key: scope === "global" ? "agents.okGlobal" : "agents.okFolder", tone: "ok" });
+        refresh();
+      })
       .catch((caught: unknown) => {
         const reason = String(caught);
-        setMessage(t(reason.includes("skill_already_exists")
-          ? "error.skillsExist"
-          : reason.includes("agent_not_installed")
+        setMessage({
+          key: reason.includes("agent_not_installed")
             ? "error.agentMissing"
-            : "error.skills"));
-      });
+            : reason.includes("config")
+              ? "error.agentConfig"
+              : "error.agentInstall",
+          tone: "error",
+        });
+      })
+      .finally(() => setPending(undefined));
+  };
+
+  const installInFolder = (agentId: string) => {
+    setMessage(undefined);
+    void chooseFolder().then((folder) => {
+      if (folder) run(agentId, "folder", install(agentId, folder));
+    });
   };
 
   return (
     <div className="agents">
       <p className="panel__hint">{t("agents.intro")}</p>
 
-      {groups.map(({ group, agents: members }) => (
-        <section key={group} className="agents__group">
-          <h4>{t(`agents.group.${group}` as const)}</h4>
-          <ul>
-            {members.map((agent) => (
-              <li key={agent.id} className={agent.home ? "is-detected" : ""}>
-                <div className="agents__identity">
-                  <strong>{t(`agents.${agent.id}` as const)}</strong>
-                  <span className={`badge ${agent.home ? "badge--on" : ""}`}>
-                    {agent.home ? t("agents.detected") : t("agents.missing")}
-                  </span>
-                  {agent.skillsInstalled && <span className="badge badge--quiet">{t("agents.skillsInstalled")}</span>}
-                </div>
-                {agent.configPath && <p className="agents__path">{t("agents.configPath", { path: agent.configPath })}</p>}
-                <div className="agents__actions">
-                  {agent.skillsPath && (
-                    <button
-                      type="button"
-                      className="button"
-                      disabled={busy || !agent.home || agent.skillsInstalled}
-                      onClick={() => install(installSkills(agent.id), t("ok.skills"))}
-                    >
-                      <PackagePlus aria-hidden="true" /> {t("agents.installGlobal")}
-                    </button>
-                  )}
+      <section className="agents__group">
+        <h4>{t("agents.detectedTitle")}</h4>
+        {agents === undefined && <p className="panel__hint">{t("agents.detecting")}</p>}
+        {agents?.length === 0 && <p className="panel__hint">{t("agents.none")}</p>}
+        <ul>
+          {agents?.map((agent) => (
+            <li key={agent.id}>
+              <div className="agents__identity">
+                <strong>{t(`agents.${agent.id}` as const)}</strong>
+                {agent.installed && <span className="badge badge--on">{t("agents.ready")}</span>}
+              </div>
+              <p className="agents__path">{agent.home}</p>
+              <div className="agents__actions">
+                <button
+                  type="button"
+                  className="button button--primary"
+                  disabled={busy || agent.installed || pending === `${agent.id}:global`}
+                  onClick={() => run(agent.id, "global", install(agent.id))}
+                >
+                  <PackagePlus aria-hidden="true" />
+                  {agent.installed ? t("agents.installedGlobal") : t("agents.installGlobal")}
+                </button>
+                {agent.supportsFolder && (
                   <button
                     type="button"
                     className="button"
-                    onClick={() => {
-                      setFormat(agent.format);
-                      setConfigPath(agent.configPath ?? undefined);
-                    }}
+                    disabled={busy || pending === `${agent.id}:folder`}
+                    onClick={() => installInFolder(agent.id)}
                   >
-                    <ServerCog aria-hidden="true" /> {t("agents.mcpTitle")}
+                    <FolderPlus aria-hidden="true" /> {t("agents.installFolder")}
                   </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
-
-      <p className="panel__hint">{t("agents.folderHint")}</p>
-      <button type="button" className="button agents__folder-action" disabled={busy} onClick={() => install(installSkillsInFolder(), t("ok.skills"))}>
-        <PackagePlus aria-hidden="true" /> {t("agents.installFolder")}
-      </button>
-
-      <section className="agents__mcp">
-        <h4>{t("agents.mcpTitle")}</h4>
-        <p className="panel__hint">{t("agents.mcpIntro")}</p>
-        <button
-          type="button"
-          className="button button--primary"
-          disabled={busy}
-          onClick={() => {
-            setMessage(undefined);
-            void installMcp()
-              .then((installed) => {
-                setRuntime(installed);
-                setMessage(installed.installed ? t("ok.mcp") : t("agents.mcpAlready"));
-              })
-              .catch(() => setMessage(t("error.mcp")));
-          }}
-        >
-          <ServerCog aria-hidden="true" /> {t("agents.mcpInstall")}
-        </button>
-        {runtime && <p className="agents__path">{t("agents.mcpInstalledAt", { path: runtime.path })}</p>}
-
-        <div className="agents__mcp-fields">
-          <SelectField
-            label={t("agents.mcpFormat")}
-            value={format}
-            options={Object.entries(FORMAT_LABELS).map(([value, label]) => ({ value, label }))}
-            onValueChange={(value) => setFormat(value as McpConfigFormat)}
-          />
-          <SelectField
-            label={t("agents.mcpRoot")}
-            value={root}
-            options={roots.map((path) => ({ value: path, label: path }))}
-            onValueChange={setRoot}
-          />
-        </div>
-
-        <label className="agents__snippet">
-          <span className="field__label">{t("agents.mcpSnippet", { format: FORMAT_LABELS[format] })}</span>
-          <textarea readOnly rows={9} value={snippet} spellCheck={false} />
-        </label>
-        <div className="agents__actions">
-          <button
-            type="button"
-            className="button"
-            onClick={() => {
-              void navigator.clipboard?.writeText(snippet).then(() => {
-                setCopied(true);
-                window.setTimeout(() => setCopied(false), 2000);
-              }).catch(() => setCopied(false));
-            }}
-          >
-            {copied ? <Check aria-hidden="true" /> : <ClipboardCopy aria-hidden="true" />}
-            {copied ? t("action.copied") : t("action.copy")}
-          </button>
-        </div>
-        <p className="panel__hint">{t("agents.mcpWriteHint", { path: configPath ?? t("agents.mcpFormat") })}</p>
-        <p className="panel__hint">{t("agents.mcpPrerequisites")}</p>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
       </section>
 
-      {message && <p className="agents__message" role="status">{message}</p>}
+      <section className="agents__group">
+        <h4>{t("agents.foldersTitle")}</h4>
+        <p className="panel__hint">{t("agents.foldersHint")}</p>
+        {folders.length === 0
+          ? <p className="panel__hint">{t("agents.foldersEmpty")}</p>
+          : (
+            <ul className="agents__folders">
+              {folders.map((entry) => (
+                <li key={`${entry.agentId}:${entry.folder}`}>
+                  <div>
+                    <span>{entry.folder}</span>
+                    <span className="badge badge--quiet">{t(`agents.${entry.agentId}` as const)}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={t("agents.forgetFolder")}
+                    disabled={busy}
+                    onClick={() => {
+                      setMessage(undefined);
+                      void forget(entry.agentId, "folder", entry.folder)
+                        .then(setInstalls)
+                        .catch(() => setMessage({ key: "error.agentInstall", tone: "error" }));
+                    }}
+                  >
+                    <X aria-hidden="true" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+      </section>
+
+      {message && (
+        <p className={`agents__message ${message.tone === "error" ? "agents__message--error" : ""}`} role="status">
+          {t(message.key)}
+        </p>
+      )}
+
+      <details className="agents__manual">
+        <summary>{t("agents.manualTitle")}</summary>
+        <p className="panel__hint">{t("agents.manualHint")}</p>
+        <SelectField
+          label={t("agents.mcpFormat")}
+          value={format}
+          options={Object.entries(FORMAT_LABELS).map(([value, label]) => ({ value, label }))}
+          onValueChange={(value) => setFormat(value as McpConfigFormat)}
+        />
+        <label className="agents__snippet">
+          <span className="field__label">{t("agents.mcpSnippet", { format: FORMAT_LABELS[format] })}</span>
+          <textarea readOnly rows={9} value={manualSnippet(format, installs, projectsRoot)} spellCheck={false} />
+        </label>
+        <button
+          type="button"
+          className="button"
+          onClick={() => {
+            void navigator.clipboard?.writeText(manualSnippet(format, installs, projectsRoot)).then(() => {
+              setCopied(true);
+              window.setTimeout(() => setCopied(false), 2000);
+            }).catch(() => setCopied(false));
+          }}
+        >
+          {copied ? <Check aria-hidden="true" /> : <ClipboardCopy aria-hidden="true" />}
+          {copied ? t("action.copied") : t("action.copy")}
+        </button>
+        <p className="panel__hint">{t("agents.mcpPrerequisites")}</p>
+      </details>
     </div>
   );
+}
+
+/**
+ * El fragmento para un cliente que el host no sabe detectar. La ruta real del
+ * runtime se deduce de una instalación ya hecha; sin ninguna se muestra el
+ * marcador, que enseña la forma exacta sin inventar una ruta que no existe.
+ */
+function manualSnippet(format: McpConfigFormat, installs: ManagedInstall[], projectsRoot: string): string {
+  const runtime = installs.find((entry) => entry.runtimePath)?.runtimePath ?? "<DEKS_RUNTIME_PATH>";
+  return mcpConfigSnippet(format, runtime, projectsRoot || "<DEKS_PROJECTS_ROOT>");
 }

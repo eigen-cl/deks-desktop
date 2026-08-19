@@ -10,6 +10,7 @@ export interface Workspace {
   defaultRoot: string;
   locale: string | null;
   sourceFolders: string[];
+  managedInstalls: ManagedInstall[];
 }
 
 /**
@@ -67,18 +68,39 @@ export const AGENT_IDS = [
 export type AgentId = (typeof AGENT_IDS)[number];
 
 /**
- * Un agente conocido por el host y lo que se sabe de él en este equipo. La
- * detección es sólo lectura: `home` ausente significa que el agente no está
- * instalado, no que no exista.
+ * Un arnés presente en este equipo. El host sólo devuelve los detectados: un
+ * programa que no está instalado no es una decisión que nadie pueda tomar, y
+ * llenar la pantalla con el catálogo completo era justo lo que confundía.
  */
 export interface DetectedAgent {
   id: AgentId;
   group: "claude" | "openai" | "editors" | "cli";
   format: McpConfigFormat;
-  home: string | null;
-  configPath: string | null;
-  skillsPath: string | null;
+  home: string;
+  configPath: string;
+  skillsPath: string;
+  /** MCP y skills puestos: es lo que apaga el botón de instalar. */
+  installed: boolean;
   skillsInstalled: boolean;
+  mcpInstalled: boolean;
+  /** `false` para los arneses sin noción de carpeta de trabajo. */
+  supportsFolder: boolean;
+}
+
+/**
+ * Una instalación que el host mantiene al día. Cada vez que la app se
+ * actualiza, estas entradas reciben las skills nuevas y su configuración MCP
+ * vuelve a escribirse; el resto del equipo no se toca.
+ */
+export interface ManagedInstall {
+  agentId: AgentId;
+  scope: "global" | "folder";
+  folder: string | null;
+  skillsPath: string;
+  configPath: string;
+  projectsRoot: string;
+  /** Runtime al que apunta la configuración escrita. */
+  runtimePath: string;
 }
 
 export type McpConfigFormat =
@@ -87,12 +109,6 @@ export type McpConfigFormat =
   | "vscode-json"
   | "zed-json"
   | "opencode-json";
-
-export interface ManagedMcp {
-  path: string;
-  /** `false` cuando el runtime ya estaba y no se reemplazó. */
-  installed: boolean;
-}
 
 export interface ProjectChanged {
   path: string;

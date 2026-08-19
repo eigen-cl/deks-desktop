@@ -22,7 +22,7 @@ export interface HomeProps {
   sourceFolders: string[];
   busy: boolean;
   error?: string;
-  agents: Omit<AgentSetupProps, "t" | "roots" | "busy">;
+  agents: Omit<AgentSetupProps, "t" | "projectsRoot" | "busy">;
   /** Inyectable para probar el inicio sin el host de escritorio. */
   loadCover?(path: string): Promise<DeksDocument>;
   onCreate(name: string, canvas: { width: number; height: number }, palette: Record<PaletteKey, string>): void;

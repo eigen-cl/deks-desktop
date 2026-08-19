@@ -21,9 +21,15 @@
   images now render in presentation mode.
 - Reuse an element that already exists on another slide instead of creating a second identity, so
   transitions keep interpolating between its checkpoints.
-- Install the bundled skills into the global folder of the agents detected on this machine, grouped
-  by family, and generate the exact local MCP configuration for each format without ever writing
-  inside another program's configuration.
+- Connect an AI harness in one click: Settings → Agents lists only what is actually installed on
+  this machine and offers "Install globally" or "Install into a folder", each of which sets up the
+  local MCP server and its skills together — a partial install cannot do the job.
+- Keep installed folders current by themselves: every update re-copies the skills into the folders
+  you asked DEKS to maintain, and a folder you removed or deleted simply stops being maintained.
+- Have the MCP entry written for you instead of pasted by hand. DEKS merges only its own `deks`
+  entry, leaves every other server and setting untouched, and saves a backup of the original file
+  next to it before its first write. A collapsed manual snippet remains for clients DEKS cannot
+  detect.
 - Insert and edit text, shapes, lines, icons and images through the same portable DEKS format.
 - Import PNG, JPEG, GIF and WebP images into the presentation folder so projects remain movable and
   self-contained.

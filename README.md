@@ -64,20 +64,40 @@ GitHub's `releases/latest/download/...` URLs without embedding a DEKS Desktop ve
 
 ## Bundled agent setup
 
-Settings → Agents installs two reviewed skills from `deks-plugin` 0.1.7:
+Settings → Agents lists **only the harnesses actually installed on this machine**, detected by
+reading the configuration directory each one creates for itself. A program that is not installed is
+not a decision anyone can make, so it never reaches the screen.
 
-- `deks-presentations`, the technical MCP and safety contract;
-- `design-deks-presentations`, the story, visual-system, motion and QA method.
+Each detected harness offers two buttons, and both install the same two things together — the MCP
+server and its skills. Half an installation is useless: without the server an agent cannot touch the
+presentation, and without the skills it does not know how to do it well.
 
-Desktop detects which agents exist on this machine by reading the configuration directory each agent
-creates for itself, and groups the ones that share an MCP configuration format. Detection is
-read-only. For an agent with a known global skills directory, Desktop installs the complete skill
-tree there; for anything else, choose the agent's existing `skills` parent directory explicitly. It
-copies each complete skill tree, including its relative references and agent metadata. It never
-follows bundled symlinks and never overwrites a directory with the same skill name. To update an
-existing installation, review/remove it yourself and run the installer again.
+- **Install globally** writes into the harness's own personal configuration. It is disabled once
+  both halves are in place.
+- **Install into a folder** picks a working folder and uses that harness's project conventions
+  inside it — for example `.mcp.json` plus `.claude/skills` for Claude Code. A folder install
+  authorizes that same folder as `DEKS_PROJECTS_ROOT`; a global install authorizes the default
+  presentations folder.
 
-The same screen installs `deks-local-mcp` once into the application data directory, and never
+The skills are the two reviewed ones from `deks-plugin`: `deks-presentations`, the technical MCP and
+safety contract, and `design-deks-presentations`, the story, visual-system, motion and QA method.
+Desktop copies each complete skill tree, including its relative references and agent metadata, and
+never follows bundled symlinks.
+
+Writing MCP configuration is a deliberate, explicitly requested exception to "never touch another
+program's files", and it is kept as narrow as possible. Desktop merges **only** the `deks` entry into
+the existing JSON — other MCP servers, editor settings and keys it does not understand survive
+untouched — and saves a `<file>.deks-backup` copy next to the original before its first write, so
+reverting never depends on us. Codex TOML is appended as a `[mcp_servers.deks]` block and left alone
+if that block already exists, because rewriting foreign TOML would need a full parser. No tokens are
+ever stored: the local MCP has none.
+
+Folder installs are listed on the same screen and stay current on their own: every Desktop update
+re-copies the skills into them and rewrites their configuration, so an agent never keeps instructions
+that stopped describing the product. Removing an entry from that list stops the updates and deletes
+nothing. A folder that no longer exists drops off the list instead of being recreated.
+
+Any installation also lays down `deks-local-mcp` once into the application data directory, and never
 replaces an existing runtime. That payload includes the server, exact npm dependency lock and its own
 README, so it does not depend on a source checkout. It deliberately does not embed a general-purpose
 Node runtime or a browser binary. Install Node.js 22 or newer, then run from the installed
@@ -88,12 +108,11 @@ npm ci --omit=dev
 npm run install-browser
 ```
 
-Desktop then generates the exact MCP snippet for the chosen format — `mcpServers` JSON, Codex TOML,
-VS Code, Zed or OpenCode — pointing at `node /absolute/path/deks-local-mcp/mcp/server.mjs` with only
-the explicit `DEKS_PROJECTS_ROOT`, and names the file to paste it into. Desktop never writes inside
-another program's configuration and never stores tokens. This one-time setup needs network access to
-npm and Playwright's Chromium download; normal local MCP use and preview rendering remain offline and
-browser network is blocked.
+For an MCP client Desktop cannot detect, the same screen keeps a collapsed manual section that
+generates the exact snippet for the chosen format — `mcpServers` JSON, Codex TOML, VS Code, Zed or
+OpenCode — pointing at `node /absolute/path/deks-local-mcp/mcp/server.mjs` with only the explicit
+`DEKS_PROJECTS_ROOT`. This one-time setup needs network access to npm and Playwright's Chromium
+download; normal local MCP use and preview rendering remain offline and browser network is blocked.
 
 ## Local MCP
 

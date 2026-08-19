@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { DeksDocument } from "@deks-js/document";
 import { Home, type HomeProps } from "../src/Home";
 import { translator } from "../src/i18n";
-import { createPresentation, DEFAULT_PALETTE, type DetectedAgent, type ProjectSummary } from "../src/model";
+import { createPresentation, DEFAULT_PALETTE, type DetectedAgent, type ManagedInstall, type ProjectSummary } from "../src/model";
 
 const DEFAULT_ROOT = "/Users/ada/Documents/Deks";
 const EXTRA_ROOT = "/Volumes/Trabajo/decks";
@@ -31,7 +31,23 @@ function agent(overrides: Partial<DetectedAgent> = {}): DetectedAgent {
     home: "/Users/ada/.claude",
     configPath: "/Users/ada/.claude.json",
     skillsPath: "/Users/ada/.claude/skills",
+    installed: false,
     skillsInstalled: false,
+    mcpInstalled: false,
+    supportsFolder: true,
+    ...overrides,
+  };
+}
+
+function managedFolder(overrides: Partial<ManagedInstall> = {}): ManagedInstall {
+  return {
+    agentId: "claude-code",
+    scope: "folder",
+    folder: "/Users/ada/Trabajo/propuesta",
+    skillsPath: "/Users/ada/Trabajo/propuesta/.claude/skills",
+    configPath: "/Users/ada/Trabajo/propuesta/.mcp.json",
+    projectsRoot: "/Users/ada/Trabajo/propuesta",
+    runtimePath: "/Users/ada/Library/deks-local-mcp",
     ...overrides,
   };
 }
@@ -46,10 +62,11 @@ function renderHome(overrides: Partial<HomeProps> = {}) {
     sourceFolders: [],
     busy: false,
     agents: {
+      managed: [],
       detect: async () => [agent()],
-      installSkills: vi.fn(async () => undefined),
-      installSkillsInFolder: vi.fn(async () => undefined),
-      installMcp: async () => ({ path: "/Users/ada/Library/deks-local-mcp", installed: true }),
+      install: vi.fn(async () => []),
+      forget: vi.fn(async () => []),
+      chooseFolder: vi.fn(async () => undefined),
     },
     loadCover: async () => { throw new Error("no cover"); },
     onCreate: vi.fn(),
@@ -182,43 +199,79 @@ describe("configuración", () => {
     expect(screen.getByRole("heading", { name: "Presentations" })).toBeInTheDocument();
   });
 
-  it("agrupa los agentes detectados e instala sus skills en la carpeta global", async () => {
+  it("sólo ofrece los arneses que existen en este equipo e instala MCP y skills juntos", async () => {
     const user = userEvent.setup();
-    const installSkills = vi.fn(async () => undefined);
+    const install = vi.fn(async () => []);
     renderHome({
       agents: {
-        detect: async () => [agent(), agent({ id: "cursor", group: "editors", home: null, skillsPath: null, configPath: "/Users/ada/.cursor/mcp.json" })],
-        installSkills,
-        installSkillsInFolder: vi.fn(async () => undefined),
-        installMcp: async () => ({ path: "/runtime", installed: true }),
+        managed: [],
+        detect: async () => [agent(), agent({ id: "codex", group: "openai", home: "/Users/ada/.codex", installed: true })],
+        install,
+        forget: vi.fn(async () => []),
+        chooseFolder: vi.fn(async () => undefined),
       },
     });
 
     await user.click(screen.getByRole("button", { name: "Configuración" }));
     await user.click(screen.getByRole("button", { name: "Agentes" }));
 
-    expect(await screen.findByRole("heading", { name: "Claude" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Editores" })).toBeInTheDocument();
-    // Un agente ausente aparece igual, pero no ofrece instalar nada global.
-    expect(screen.getByText("No detectado")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Arneses detectados" })).toBeInTheDocument();
+    // Lo que no está instalado no llega a pantalla: no es una decisión posible.
+    expect(screen.queryByText("Cursor")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Instalar skills" }));
-    expect(installSkills).toHaveBeenCalledWith("claude-code");
+    // Un arnés ya conectado muestra su botón apagado en vez de repetir el trabajo.
+    expect(screen.getByRole("button", { name: "Instalado" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Instalar global" }));
+    expect(install).toHaveBeenCalledWith("claude-code");
   });
 
-  it("entrega el fragmento MCP del formato elegido en vez de escribir la configuración ajena", async () => {
+  it("instala en la carpeta elegida y la deja en la lista que se mantiene al día", async () => {
     const user = userEvent.setup();
-    renderHome();
+    const install = vi.fn(async () => [managedFolder()]);
+    const forget = vi.fn(async () => []);
+    renderHome({
+      agents: {
+        managed: [],
+        detect: async () => [agent()],
+        install,
+        forget,
+        chooseFolder: async () => "/Users/ada/Trabajo/propuesta",
+      },
+    });
 
     await user.click(screen.getByRole("button", { name: "Configuración" }));
     await user.click(screen.getByRole("button", { name: "Agentes" }));
-    await user.click(await screen.findByRole("button", { name: "Instalar runtime local" }));
+    await user.click(await screen.findByRole("button", { name: "Instalar en carpeta…" }));
+
+    expect(install).toHaveBeenCalledWith("claude-code", "/Users/ada/Trabajo/propuesta");
+    expect(await screen.findByText("/Users/ada/Trabajo/propuesta")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Dejar de mantener esta carpeta" }));
+    expect(forget).toHaveBeenCalledWith("claude-code", "folder", "/Users/ada/Trabajo/propuesta");
+    await waitFor(() => expect(screen.queryByText("/Users/ada/Trabajo/propuesta")).not.toBeInTheDocument());
+  });
+
+  it("reserva el fragmento manual para el cliente que no sabemos detectar", async () => {
+    const user = userEvent.setup();
+    renderHome({
+      agents: {
+        managed: [managedFolder()],
+        detect: async () => [agent()],
+        install: vi.fn(async () => []),
+        forget: vi.fn(async () => []),
+        chooseFolder: vi.fn(async () => undefined),
+      },
+    });
+
+    await user.click(screen.getByRole("button", { name: "Configuración" }));
+    await user.click(screen.getByRole("button", { name: "Agentes" }));
 
     const snippet = await screen.findByLabelText<HTMLTextAreaElement>(/Configuración para mcpServers/);
-    await waitFor(() => expect(snippet.value).toContain("deks-local-mcp/mcp/server.mjs"));
+    expect(snippet.value).toContain("deks-local-mcp/mcp/server.mjs");
     // El fragmento autoriza una carpeta concreta y no lleva credenciales.
     expect(snippet.value).toContain(DEFAULT_ROOT);
-    expect(snippet.value).toContain("mcpServers");
+    expect(snippet.value).not.toMatch(/token|secret|pat_/i);
   });
 });
 

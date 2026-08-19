@@ -79,7 +79,14 @@ test("release workflow builds all desktop platforms, notarizes macOS and publish
   assert.match(workflow, /SHA256SUMS\.txt/);
   assert.match(workflow, /latest\.json/);
   assert.match(workflow, /gh release create/);
-  assert.match(workflow, /--draft/);
+  // La release sale completa o no sale: sin borrador que alguien tenga que
+  // terminar a mano, y sin camino que publique un DMG sin notarizar.
+  assert.match(workflow, /--verify-tag --latest/);
+  assert.doesNotMatch(workflow, /--draft/);
+  assert.match(workflow, /spctl --assess --type execute/);
+  assert.match(workflow, /xcrun stapler validate "\$dmg_path"/);
+  assert.match(workflow, /codesign --verify --strict "\$dmg_path"/);
+  assert.doesNotMatch(workflow, /notarize=(true|false)/);
   assert.match(workflow, /refs\/tags\/\$GITHUB_REF_NAME:refs\/tags\/\$GITHUB_REF_NAME/);
   assert.match(workflow, /main:refs\/remotes\/origin\/main --no-tags/);
   assert.doesNotMatch(workflow, /pull_request:/);

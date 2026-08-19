@@ -13,7 +13,7 @@ export interface SettingsDialogProps {
   defaultRoot: string;
   sourceFolders: string[];
   busy?: boolean;
-  agents: Omit<AgentSetupProps, "t" | "roots" | "busy">;
+  agents: Omit<AgentSetupProps, "t" | "projectsRoot" | "busy">;
   onLocaleChange(locale: Locale): void;
   onAddSourceFolder(): void;
   onRemoveSourceFolder(path: string): void;
@@ -106,7 +106,7 @@ export function SettingsDialog({
           )}
 
           {section === "agents" && (
-            <AgentSetup t={t} roots={[defaultRoot, ...sourceFolders].filter(Boolean)} busy={busy} {...agents} />
+            <AgentSetup t={t} projectsRoot={defaultRoot} busy={busy} {...agents} />
           )}
         </div>
       </div>

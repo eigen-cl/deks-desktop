@@ -779,10 +779,8 @@ h1, h2, h3 {
   border-radius: 10px;
   background: var(--color-bg);
   box-shadow: inset 0 0 0 1px var(--color-soft-edge);
-  opacity: 0.66;
 }
 
-.agents__group li.is-detected { opacity: 1; }
 .agents__identity { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 .agents__identity strong { font-size: var(--text-body); font-weight: 500; }
 
@@ -799,9 +797,32 @@ h1, h2, h3 {
 .agents__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .agents__actions .button { min-height: 30px; font-size: var(--text-small); }
 
-.agents__folder-action { justify-self: start; }
+.agents__folders { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-1); }
 
-.agents__mcp {
+.agents__folders li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: 8px;
+  background: var(--color-bg);
+  box-shadow: inset 0 0 0 1px var(--color-soft-edge);
+}
+
+.agents__folders li > div { display: grid; gap: 2px; min-width: 0; }
+
+.agents__folders li span:first-child {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agents__folders .badge { justify-self: start; }
+
+.agents__manual {
   display: grid;
   gap: var(--space-3);
   padding: var(--space-4);
@@ -810,9 +831,20 @@ h1, h2, h3 {
   box-shadow: inset 0 0 0 1px var(--color-soft-edge);
 }
 
-.agents__mcp h4 { margin: 0; font-family: var(--font-display); font-size: 14px; font-weight: 500; }
-.agents__mcp .button { justify-self: start; }
-.agents__mcp-fields { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+/* Cerrado no debe reservar el hueco de sus hijos: `display: grid` en un
+   `details` deja el contenido oculto ocupando la rejilla igual. */
+.agents__manual:not([open]) { display: block; }
+
+.agents__manual summary {
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.agents__manual summary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; border-radius: 6px; }
+.agents__manual .button { justify-self: start; }
 .agents__snippet { display: grid; gap: var(--space-1); }
 
 .agents__snippet textarea {
@@ -830,6 +862,7 @@ h1, h2, h3 {
 }
 
 .agents__message { margin: 0; color: var(--color-text); font-size: var(--text-small); line-height: 1.5; }
+.agents__message--error { color: var(--color-primary-hover); }
 
 /* ── Editor ───────────────────────────────────────────────────────────── */
 
@@ -1339,7 +1372,7 @@ h1, h2, h3 {
   .create__size-row { grid-template-columns: 1fr 1fr; }
   .settings { grid-template-columns: 1fr; gap: var(--space-4); }
   .settings__nav { grid-auto-flow: column; justify-content: start; }
-  .agents__mcp-fields { grid-template-columns: 1fr; }
+  .agents__folders li { flex-wrap: wrap; }
 }
 
 @media (prefers-reduced-motion: reduce) {

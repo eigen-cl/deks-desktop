@@ -5,7 +5,7 @@ import type { DeksDocument } from "@deks-js/document";
 import { toCanonicalDocument } from "./legacy-document";
 import type { ImportedAsset } from "./editor/elements";
 import type { Locale } from "./i18n";
-import type { DetectedAgent, ManagedMcp, OpenProject, ProjectChanged, ProjectSummary, Workspace } from "./model";
+import type { DetectedAgent, ManagedInstall, OpenProject, ProjectChanged, ProjectSummary, Workspace } from "./model";
 
 /** Raíz por defecto, idioma guardado y carpetas fuente en una sola llamada. */
 export function readWorkspace(): Promise<Workspace> {
@@ -79,29 +79,39 @@ export function deleteProject(path: string): Promise<void> {
   return invoke("delete_project", { path });
 }
 
-/** Qué agentes hay instalados en este equipo. Sólo lee; nunca los configura. */
+/** Qué arneses hay instalados en este equipo. Sólo lee, y sólo los presentes. */
 export function detectAgents(): Promise<DetectedAgent[]> {
   return invoke<DetectedAgent[]>("detect_agents");
 }
 
-export function installAgentSkills(agentId: string): Promise<string[]> {
-  return invoke<string[]>("install_agent_skills", { agentId });
+/**
+ * Instala MCP y skills juntos en un arnés. Sin `folder` la instalación es
+ * global; con `folder` queda dentro de esa carpeta y la autoriza a ella.
+ */
+export function installAgent(
+  agentId: string,
+  projectsRoot: string,
+  folder?: string,
+): Promise<ManagedInstall[]> {
+  return invoke<ManagedInstall[]>("install_agent", { agentId, projectsRoot, folder: folder ?? null });
 }
 
-export function installManagedMcp(): Promise<ManagedMcp> {
-  return invoke<ManagedMcp>("install_managed_mcp");
+/** Deja de mantener una instalación. No borra nada: sólo deja de actualizarla. */
+export function forgetManagedInstall(
+  agentId: string,
+  scope: "global" | "folder",
+  folder: string | null,
+): Promise<ManagedInstall[]> {
+  return invoke<ManagedInstall[]>("forget_managed_install", { agentId, scope, folder });
+}
+
+/** Reinstala skills y configuración en todo lo que el host mantiene al día. */
+export function syncManagedInstalls(): Promise<ManagedInstall[]> {
+  return invoke<ManagedInstall[]>("sync_managed_installs");
 }
 
 export function watchProject(path: string): Promise<void> {
   return invoke("watch_project", { path });
-}
-
-export function installBundledSkills(destinationPath: string): Promise<string[]> {
-  return invoke("install_bundled_skills", { destinationPath });
-}
-
-export function installBundledMcp(destinationPath: string): Promise<string> {
-  return invoke("install_bundled_mcp", { destinationPath });
 }
 
 export function onProjectChanged(handler: (event: ProjectChanged) => void): Promise<UnlistenFn> {

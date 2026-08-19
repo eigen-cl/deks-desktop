@@ -37,74 +37,47 @@ only event that refreshes these downloads; pushes to `main` still run CI without
 Windows and Linux packages are not described as signed until platform signing is implemented and
 verified. The final publish job runs only after validation and all three native build jobs succeed.
 
+Publishing a tag is the only manual step. Everything after it — validation, signing, notarization,
+stapling, checksums, the manifest and the public GitHub Release — happens in CI with no human
+handoff. There is no draft state to finish by hand: either the release comes out complete, or it
+does not come out.
+
 ## Required GitHub configuration
 
-Configure these Actions secret names for the required macOS signature. Never place their values in
-Git, release notes, issue text or command output:
+All six Actions secrets are required. Never place their values in Git, release notes, issue text or
+command output.
 
-- `CSC_LINK` or `MACOS_CSC_LINK` — base64 PKCS#12 Developer ID certificate;
-- `CSC_KEY_PASSWORD` or `MACOS_CSC_KEY_PASSWORD`;
-- `CSC_NAME` or `MACOS_CSC_NAME`;
-CI notarization is optional only as a complete trio: `APPLE_API_KEY_BASE64`, `APPLE_API_KEY_ID` and
-`APPLE_API_ISSUER`. A partial trio fails validation. With all three present, CI notarizes and verifies
-the ticket before publishing. With none present, CI still requires and verifies the Developer ID
-signature but creates a **draft** GitHub Release; it never presents the unnotarized DMG as complete.
+macOS Developer ID signature:
 
-When configured, the Apple API key is decoded into a mode-0600 file under the runner's temporary
-directory, is available only to the macOS job and is deleted in an `always()` cleanup step. GitHub's
-scoped token is exposed only to the final release job.
+- `CSC_LINK` or `MACOS_CSC_LINK` — base64 PKCS#12 Developer ID Application certificate, exported
+  with its private key;
+- `CSC_KEY_PASSWORD` or `MACOS_CSC_KEY_PASSWORD` — the export password;
+- `CSC_NAME` or `MACOS_CSC_NAME` — the full identity, e.g. `Developer ID Application: NAME (TEAMID)`.
 
-### Current local-notarization handoff
+Apple notarization, through an App Store Connect API key with the Developer role or higher:
 
-Until the App Store Connect API trio is configured in GitHub, use the already provisioned local
-keychain profile `forger-notary` to finish the draft. Download only the six installer assets into a
-clean input directory. Keep the generated output directory absent so the assembler cannot mix a new
-manifest with stale files:
+- `APPLE_API_KEY_BASE64` — base64 of the downloaded `.p8`;
+- `APPLE_API_KEY_ID` — the Key ID, which is also the suffix of the `.p8` filename;
+- `APPLE_API_ISSUER` — the Issuer UUID above the key table, not the Team ID.
 
-```bash
-DEKS_TAG="vX.Y.Z"
-DEKS_HANDOFF_ROOT="$(mktemp -d)"
-DEKS_RELEASE_INPUT="$DEKS_HANDOFF_ROOT/input"
-DEKS_RELEASE_OUTPUT="$DEKS_HANDOFF_ROOT/output"
-mkdir "$DEKS_RELEASE_INPUT"
-gh release download "$DEKS_TAG" \
-  --pattern 'deks-desktop-*' \
-  --dir "$DEKS_RELEASE_INPUT"
+A missing credential fails the release during validation, before any runner starts building. This is
+deliberate: a signed but unnotarized DMG is a DMG Gatekeeper refuses to open, so publishing one would
+advertise a download nobody can use.
 
-DEKS_DMG_PATH="$DEKS_RELEASE_INPUT/deks-desktop-macos-universal.dmg"
-xcrun notarytool submit "$DEKS_DMG_PATH" \
-  --keychain-profile forger-notary --wait
-xcrun stapler staple "$DEKS_DMG_PATH"
-xcrun stapler validate "$DEKS_DMG_PATH"
-codesign --verify --verbose=2 "$DEKS_DMG_PATH"
-```
+The Apple API key is decoded into a mode-0600 file under the runner's temporary directory, is
+available only to the macOS job and is deleted in an `always()` cleanup step. GitHub's scoped token
+is exposed only to the final release job.
 
-After the notarized DMG replaces the draft copy, rebuild all stable files into a separate directory.
-This recalculates both the DMG checksum and size before replacing the DMG, aggregate checksums and
-manifest in the draft:
+The macOS job verifies what it produced before anything is published: `codesign` on the mounted app
+and on the DMG, `spctl --assess` against the Gatekeeper policy, and `xcrun stapler validate` for the
+notarization ticket. A DMG that fails any of these never reaches the release.
 
-```bash
-DEKS_PUBLISHED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-node scripts/assemble-release-assets.mjs \
-  --input "$DEKS_RELEASE_INPUT" \
-  --output "$DEKS_RELEASE_OUTPUT" \
-  --tag "$DEKS_TAG" \
-  --published-at "$DEKS_PUBLISHED_AT" \
-  --release-url "https://github.com/eigen-cl/deks-desktop/releases/tag/$DEKS_TAG"
+### Optional signed update channel
 
-(cd "$DEKS_RELEASE_OUTPUT" && shasum -a 256 -c SHA256SUMS.txt)
-gh release upload "$DEKS_TAG" \
-  "$DEKS_RELEASE_OUTPUT/deks-desktop-macos-universal.dmg" \
-  "$DEKS_RELEASE_OUTPUT/SHA256SUMS.txt" \
-  "$DEKS_RELEASE_OUTPUT/latest.json" \
-  --clobber
-gh release edit "$DEKS_TAG" --draft=false --latest
-```
-
-Before the final `gh release edit`, inspect the notarization result and checksum locally. Do not mark
-the release complete if `notarytool` is not `Accepted`, `stapler validate` fails, or the rebuilt
-checksums fail. `latest.json` reports distribution metadata and integrity; it deliberately does not
-claim code-signing or notarization status.
+The in-app updater stays off until the repository variable `DESKTOP_UPDATER_READY` is `true` and both
+`TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` plus `TAURI_UPDATER_PUBKEY`
+exist. A partial key pair fails the release rather than publishing update artifacts no client can
+install. Releases publish normally with the channel off; they simply omit `updater.json`.
 
 ## Local gates and tag handoff
 

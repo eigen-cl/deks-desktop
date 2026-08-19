@@ -8,10 +8,9 @@ import {
   createProject,
   deleteProject,
   detectAgents,
+  forgetManagedInstall,
   importAsset,
-  installAgentSkills,
-  installBundledSkills,
-  installManagedMcp,
+  installAgent,
   listProjects,
   onProjectChanged,
   openProject,
@@ -19,12 +18,14 @@ import {
   removeSourceFolder,
   saveProject,
   setLocale as persistLocale,
+  syncManagedInstalls,
   watchProject,
 } from "./desktop-api";
 import { Editor, type SaveState } from "./editor/Editor";
 import { Home } from "./Home";
 import {
   createPresentation,
+  type ManagedInstall,
   type OpenProject,
   type PaletteKey,
   type ProjectChanged,
@@ -39,6 +40,7 @@ export function App() {
   const [locale, setLocale] = useState<Locale>(DEFAULT_LOCALE);
   const [defaultRoot, setDefaultRoot] = useState("");
   const [sourceFolders, setSourceFolders] = useState<string[]>([]);
+  const [managedInstalls, setManagedInstalls] = useState<ManagedInstall[]>([]);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   // Guardar es lo único del estado interno que la persona necesita ver, y sólo
   // mientras pasa. Anunciar «carpeta abierta · observando cambios» describía la
@@ -72,6 +74,7 @@ export function App() {
         const workspace = await readWorkspace();
         setDefaultRoot(workspace.defaultRoot);
         setSourceFolders(workspace.sourceFolders);
+        setManagedInstalls(workspace.managedInstalls);
         setLocale(resolveLocale(workspace.locale, navigator.languages ?? [navigator.language]));
         await refreshProjects([workspace.defaultRoot, ...workspace.sourceFolders]);
       } catch {
@@ -95,6 +98,13 @@ export function App() {
       }
     });
     return () => { void unlisten.then((stop) => stop()).catch(() => undefined); };
+  }, []);
+
+  useEffect(() => {
+    // Las instalaciones que la persona pidió mantener se ponen al día al
+    // arrancar: una app actualizada trae skills nuevas, y quien ya las instaló
+    // no tiene por qué acordarse de volver a hacerlo.
+    void syncManagedInstalls().then(setManagedInstalls).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -230,16 +240,6 @@ export function App() {
     }
   };
 
-  /**
-   * Instalación por carpeta: sigue existiendo para el agente que el host no
-   * sabe detectar. La global vive en la configuración, junto a la detección.
-   */
-  const installSkillsInFolder = async () => {
-    const destination = await chooseDirectory(t("home.installSkills"));
-    if (!destination) return;
-    await installBundledSkills(destination);
-  };
-
   const updateBanner = (update.status === "available" || update.status === "downloading" || update.status === "ready")
     ? (
       <aside className="update-banner" role="status">
@@ -284,10 +284,11 @@ export function App() {
           busy={choosingFolder}
           error={error}
           agents={{
+            managed: managedInstalls,
             detect: detectAgents,
-            installSkills: installAgentSkills,
-            installSkillsInFolder,
-            installMcp: installManagedMcp,
+            install: (agentId, folder) => installAgent(agentId, defaultRoot, folder),
+            forget: forgetManagedInstall,
+            chooseFolder: () => chooseDirectory(t("agents.installFolder")),
           }}
           onCreate={(name, canvas, palette) => void createNew(name, canvas, palette)}
           onOpenProject={(path) => void open(path)}

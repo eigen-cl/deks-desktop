@@ -12,8 +12,8 @@
     "install-browser": "playwright install chromium"
   },
   "dependencies": {
-    "@deks-js/document": "3.0.0",
-    "@deks-js/render-preview": "3.0.0",
+    "@deks-js/document": "4.0.0",
+    "@deks-js/render-preview": "4.0.0",
     "playwright": "1.62.1"
   }
 }

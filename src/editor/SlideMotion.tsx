@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { RotateCcw } from "lucide-react";
 import {
+  effectiveDelayMs,
   effectiveDurationMs,
   resolveSlideMotion,
   type DeksDocument,
@@ -60,9 +61,11 @@ export function SlideMotion({ t, document: deck, slideId, disabled = false, onSe
       ? ({ kind: "slide", edge: "left" } as const)
       : kind === "crop"
         ? ({ kind: "crop", edge: "bottom" } as const)
-        : kind === "scale"
-          ? ({ kind: "scale", from: 0.8 } as const)
-          : ({ kind: kind as "none" | "fade" } as const);
+        : kind === "wipe"
+          ? ({ kind: "wipe", edge: "left" } as const)
+          : kind === "scale"
+            ? ({ kind: "scale", from: 0.8 } as const)
+            : ({ kind: kind as "none" | "fade" } as const);
     onSet(role, { animation: next });
   };
 
@@ -107,10 +110,29 @@ export function SlideMotion({ t, document: deck, slideId, disabled = false, onSe
               { value: "fade", label: t("motion.fade") },
               { value: "slide", label: t("motion.slide") },
               { value: "crop", label: t("motion.crop") },
+              { value: "wipe", label: t("motion.wipe") },
               { value: "scale", label: t("motion.scale") },
             ]}
         onValueChange={changeAnimation}
       />
+
+      {animation.kind === "wipe" && (
+        <>
+          <SelectField
+            label={t("motion.edge")}
+            value={animation.edge}
+            disabled={disabled}
+            options={[
+              { value: "left", label: t("motion.left") },
+              { value: "right", label: t("motion.right") },
+              { value: "top", label: t("motion.top") },
+              { value: "bottom", label: t("motion.bottom") },
+            ]}
+            onValueChange={(edge) => onSet(role, { animation: { kind: "wipe", edge: edge as typeof animation.edge } })}
+          />
+          <p className="panel__hint">{t("motion.wipeHint")}</p>
+        </>
+      )}
 
       {animation.kind === "crop" && (
         <>
@@ -166,6 +188,14 @@ export function SlideMotion({ t, document: deck, slideId, disabled = false, onSe
           onCommit={(durationBeats) => onSet(role, { durationBeats })}
         />
         <NumberField
+          label={t("motion.delayBeats")}
+          value={current.delayBeats}
+          min={0}
+          step={0.25}
+          disabled={disabled}
+          onCommit={(delayBeats) => onSet(role, { delayBeats })}
+        />
+        <NumberField
           label={t("motion.delay")}
           value={current.delayMs}
           min={0}
@@ -174,6 +204,7 @@ export function SlideMotion({ t, document: deck, slideId, disabled = false, onSe
           onCommit={(delayMs) => onSet(role, { delayMs })}
         />
       </div>
+      <p className="motion__hint">{t("motion.delayHint")}</p>
 
       <SelectField
         label={t("motion.easing")}
@@ -190,6 +221,9 @@ export function SlideMotion({ t, document: deck, slideId, disabled = false, onSe
 
       <p className="motion__hint">
         {t("motion.effective", { ms: effectiveDurationMs(deck.motionBeatMs, current.durationBeats) })}
+        {current.delayBeats > 0 || current.delayMs > 0
+          ? ` · ${t("motion.effectiveDelay", { ms: effectiveDelayMs(deck.motionBeatMs, current.delayBeats, current.delayMs) })}`
+          : ""}
       </p>
 
       <button

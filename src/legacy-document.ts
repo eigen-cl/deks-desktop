@@ -1,4 +1,10 @@
-import { assertDeksDocument, type DeksDocument, type DeksElement, type DeksElementState } from "@deks-js/document";
+import {
+  DEFAULT_MOTION as CORE_DEFAULT_MOTION,
+  assertDeksDocument,
+  type DeksDocument,
+  type DeksElement,
+  type DeksElementState,
+} from "@deks-js/document";
 
 /**
  * Migración de proyectos creados antes del contrato canónico 1.0.
@@ -40,12 +46,13 @@ export function isLegacyDocument(value: unknown): boolean {
   return "canvasWidth" in document || Array.isArray(document.slides);
 }
 
-/** Un documento anterior no declara movimiento: hereda el del contrato nuevo. */
-const DEFAULT_MOTION = {
-  in: { animation: { kind: "fade" }, durationBeats: 1, delayMs: 0, easing: "ease-out" },
-  out: { animation: { kind: "fade" }, durationBeats: 1, delayMs: 0, easing: "ease-in" },
-  morph: { animation: { kind: "morph" }, durationBeats: 1, delayMs: 0, easing: "ease-in-out" },
-} as const;
+/**
+ * Un documento anterior no declara movimiento: hereda el del contrato nuevo.
+ * Se toma tal cual de Core en vez de repetirlo, porque una copia a mano ya se
+ * quedó atrás cuando el contrato sumó una propiedad y los archivos viejos
+ * dejaron de abrir.
+ */
+const DEFAULT_MOTION = CORE_DEFAULT_MOTION;
 
 export function upgradeLegacyDocument(value: unknown): DeksDocument {
   const legacy = value as Record<string, any>;

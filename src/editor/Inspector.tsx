@@ -2,7 +2,7 @@ import type { DeksDocument, DeksElementState, DeksSlide, SlideBackground } from 
 import { Lock, LockOpen, Trash2 } from "lucide-react";
 import { clampOpacity, type EditorElement } from "./elements";
 import { ElementList } from "./ElementList";
-import { ColorField, NumberField, SelectField, TextAreaField, TextField } from "../ui/fields";
+import { ColorField, NumberField, SelectField, TextAreaField, TextField, Toggle } from "../ui/fields";
 import type { Translate } from "../i18n";
 
 export type InspectorTab = "slide" | "element" | "elements";
@@ -20,6 +20,7 @@ export interface InspectorProps {
   onPatchSlide(patch: Partial<Omit<DeksSlide, "id" | "states">>): void;
   onRenameElement(name: string): void;
   onLockElement(isLocked: boolean): void;
+  onAnimateMagnitude(animateMagnitude: { in: boolean; morph: boolean; out: boolean }): void;
   onPatchState(patch: Partial<Omit<DeksElementState, "elementId">>): void;
   onRemoveFromSlide(): void;
   onDeleteEverywhere(): void;
@@ -53,6 +54,7 @@ export function Inspector({
   onPatchSlide,
   onRenameElement,
   onLockElement,
+  onAnimateMagnitude,
   onPatchState,
   onRemoveFromSlide,
   onDeleteEverywhere,
@@ -110,6 +112,7 @@ export function Inspector({
               disabled={disabled}
               onRename={onRenameElement}
               onLock={onLockElement}
+              onAnimateMagnitude={onAnimateMagnitude}
               onPatch={onPatchState}
               onRemoveFromSlide={onRemoveFromSlide}
               onDeleteEverywhere={onDeleteEverywhere}
@@ -221,6 +224,7 @@ function ElementProperties({
   disabled,
   onRename,
   onLock,
+  onAnimateMagnitude,
   onPatch,
   onRemoveFromSlide,
   onDeleteEverywhere,
@@ -231,6 +235,8 @@ function ElementProperties({
   disabled: boolean;
   onRename(name: string): void;
   onLock(isLocked: boolean): void;
+  /** Los toggles de conteo viven en la identidad, no en el estado de la slide. */
+  onAnimateMagnitude(animateMagnitude: { in: boolean; morph: boolean; out: boolean }): void;
   onPatch(patch: Partial<Omit<DeksElementState, "elementId">>): void;
   onRemoveFromSlide(): void;
   onDeleteEverywhere(): void;
@@ -388,6 +394,67 @@ function ElementProperties({
               />
             )}
           </div>
+        </section>
+      )}
+
+      {element.kind === "number" && (
+        <section className="panel">
+          <h3>{t("editor.addNumber")}</h3>
+          <div className="panel__grid">
+            <NumberField label={t("editor.numberValue")} value={element.value ?? 0} step={1} disabled={disabled} onCommit={(value) => onPatch({ value })} />
+            <NumberField label={t("editor.numberDecimals")} value={element.decimals ?? 0} min={0} max={6} step={1} disabled={disabled} onCommit={(decimals) => onPatch({ decimals })} />
+          </div>
+          <div className="panel__grid">
+            <TextField label={t("editor.numberSymbol")} value={element.symbol ?? ""} disabled={disabled} onChange={(symbol) => onPatch({ symbol: symbol.slice(0, 8) })} />
+            <SelectField
+              label={t("editor.numberSymbolPosition")}
+              value={element.symbolPosition ?? "after"}
+              disabled={disabled}
+              options={[
+                { value: "before", label: t("editor.numberSymbolBefore") },
+                { value: "after", label: t("editor.numberSymbolAfter") },
+              ]}
+              onValueChange={(value) => onPatch({ symbolPosition: value as "before" | "after" })}
+            />
+          </div>
+          <div className="panel__grid">
+            <SelectField
+              label={t("editor.numberGroupSeparator")}
+              value={element.groupSeparator ?? ","}
+              disabled={disabled}
+              options={[
+                { value: ",", label: "1,234" },
+                { value: ".", label: "1.234" },
+                { value: " ", label: "1 234" },
+                { value: "'", label: "1'234" },
+                { value: "", label: t("editor.numberNoGrouping") },
+              ]}
+              onValueChange={(value) => onPatch({ groupSeparator: value as "," })}
+            />
+            <SelectField
+              label={t("editor.numberDecimalSeparator")}
+              value={element.decimalSeparator ?? "."}
+              disabled={disabled}
+              options={[{ value: ".", label: "0.5" }, { value: ",", label: "0,5" }]}
+              onValueChange={(value) => onPatch({ decimalSeparator: value as "." | "," })}
+            />
+          </div>
+          <p className="panel__hint">{t("editor.numberMagnitudeHint")}</p>
+          {(["in", "morph", "out"] as const).map((role) => (
+            <Toggle
+              key={role}
+              label={t(`editor.numberMagnitude.${role}` as const)}
+              checked={element.animateMagnitude?.[role] ?? false}
+              disabled={disabled}
+              onCheckedChange={(checked) => onAnimateMagnitude({
+                in: element.animateMagnitude?.in ?? false,
+                morph: element.animateMagnitude?.morph ?? false,
+                out: element.animateMagnitude?.out ?? false,
+                [role]: checked,
+              })}
+            />
+          ))}
+          <ColorField label={t("editor.color")} value={element.fill ?? deck.palette.secondary} disabled={disabled} onCommit={(value) => onPatch({ fill: value })} />
         </section>
       )}
 

@@ -49,7 +49,7 @@ Read only the references needed for the task:
 ## Choreograph one base rhythm
 
 - Choose `motion_beat_ms` once for the presentation. Treat `1.0x` as the normal duration for checkpoint work.
-- Set slide entry and exit presets as the base presence flow. Most entering and exiting elements should inherit these defaults.
+- Set the presentation motion as the base flow, and patch a slide or an element only where the story asks for an exception. Most elements should inherit everything.
 - Use stable identity and geometry interpolation for elements that persist.
 - Override an individual element only when its narrative meaning differs from the base flow. For example, fade a restated idea that remains the same conceptual point; glide an object when the story describes displacement or transfer.
 - Audit actual playback. A configured animation that simply appears is a defect or contract mismatch until verified, not evidence that the audience saw the intended transition.

@@ -58,9 +58,11 @@ export function SlideMotion({ t, document: deck, slideId, disabled = false, onSe
     // y `scale` una escala inicial, o el documento quedaría incompleto.
     const next = kind === "slide"
       ? ({ kind: "slide", edge: "left" } as const)
-      : kind === "scale"
-        ? ({ kind: "scale", from: 0.8 } as const)
-        : ({ kind: kind as "none" | "fade" } as const);
+      : kind === "crop"
+        ? ({ kind: "crop", edge: "bottom" } as const)
+        : kind === "scale"
+          ? ({ kind: "scale", from: 0.8 } as const)
+          : ({ kind: kind as "none" | "fade" } as const);
     onSet(role, { animation: next });
   };
 
@@ -104,10 +106,29 @@ export function SlideMotion({ t, document: deck, slideId, disabled = false, onSe
               { value: "none", label: t("motion.none") },
               { value: "fade", label: t("motion.fade") },
               { value: "slide", label: t("motion.slide") },
+              { value: "crop", label: t("motion.crop") },
               { value: "scale", label: t("motion.scale") },
             ]}
         onValueChange={changeAnimation}
       />
+
+      {animation.kind === "crop" && (
+        <>
+          <SelectField
+            label={t("motion.edge")}
+            value={animation.edge}
+            disabled={disabled}
+            options={[
+              { value: "left", label: t("motion.left") },
+              { value: "right", label: t("motion.right") },
+              { value: "top", label: t("motion.top") },
+              { value: "bottom", label: t("motion.bottom") },
+            ]}
+            onValueChange={(edge) => onSet(role, { animation: { kind: "crop", edge: edge as typeof animation.edge } })}
+          />
+          <p className="panel__hint">{t("motion.cropHint")}</p>
+        </>
+      )}
 
       {animation.kind === "slide" && (
         <SelectField

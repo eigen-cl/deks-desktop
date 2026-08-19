@@ -35,7 +35,7 @@ test("the package contract enables native bundles and embeds only the two review
   const report = await verifyBundledSkills(root);
   assert.deepEqual(report.skills, ["deks-presentations", "design-deks-presentations"]);
   assert.equal(report.source.repository, "https://github.com/eigen-cl/deks-plugin");
-  assert.equal(report.source.version, "0.1.7");
+  assert.equal(report.source.version, "0.1.10");
   for (const relativePath of report.files) {
     assert.equal((await lstat(join(new URL("bundled-skills/", root).pathname, relativePath))).isSymbolicLink(), false);
   }
@@ -47,8 +47,8 @@ test("the installed MCP payload is self-contained apart from documented Node and
   assert.equal(packageJson.scripts.start, "node mcp/server.mjs");
   assert.equal(packageJson.scripts["install-browser"], "playwright install chromium");
   assert.deepEqual(packageJson.dependencies, {
-    "@deks-js/document": "2.0.0",
-    "@deks-js/render-preview": "2.0.0",
+    "@deks-js/document": "3.0.0",
+    "@deks-js/render-preview": "3.0.0",
     "playwright": "1.62.1",
   });
   const readme = await readFile(new URL("bundled-mcp/README.md", root), "utf8");

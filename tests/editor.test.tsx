@@ -47,6 +47,15 @@ function setup(document: DeksDocument = createPresentation("Deck", { width: 1600
   return { saved, imported };
 }
 
+/**
+ * Los desplegables son Radix, no `<select>` nativo: se abren y se elige la
+ * opción por su etiqueta visible, igual que haría una persona.
+ */
+async function pickOption(user: ReturnType<typeof userEvent.setup>, label: string, option: string) {
+  await user.click(screen.getByLabelText(label));
+  await user.click(await screen.findByRole("option", { name: option }));
+}
+
 beforeEach(() => rendered.mockClear());
 
 describe("editor de escritorio", () => {
@@ -356,6 +365,82 @@ describe("movimiento de la slide", () => {
 
     await user.click(screen.getByRole("button", { name: "Volver a heredar" }));
     await waitFor(() => expect(saved.at(-1)!.slides[0]!.motion?.in).toBeUndefined());
+  });
+});
+
+describe("elemento número", () => {
+  it("nace contando al entrar y al cambiar, con su formato completo declarado", async () => {
+    const user = userEvent.setup();
+    const { saved } = setup();
+
+    await user.click(screen.getByRole("button", { name: "Número" }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+
+    const document = saved.at(-1)!;
+    const identity = document.elements.at(-1)!;
+    expect(identity.kind).toBe("number");
+    // Contar al entrar y al cambiar es el caso común; salir contando hasta cero
+    // es el raro, así que nace apagado.
+    expect(identity.animateMagnitude).toEqual({ in: true, morph: true, out: false });
+
+    const state = document.slides[0]!.states.at(-1)!;
+    // Sin `content`: los dígitos se derivan del valor y su formato.
+    expect(state).not.toHaveProperty("content");
+    expect(state.value).toBe(0);
+    for (const field of ["decimals", "groupSeparator", "decimalSeparator", "symbol", "symbolPosition"] as const) {
+      expect(state[field], field).toBeDefined();
+    }
+  });
+
+  it("edita la cifra y su símbolo sin tocar la identidad", async () => {
+    const user = userEvent.setup();
+    const { saved } = setup();
+    await user.click(screen.getByRole("button", { name: "Número" }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+
+    const value = screen.getByLabelText("Valor");
+    await user.clear(value);
+    await user.type(value, "38.5{Enter}");
+    await waitFor(() => expect(saved.at(-1)!.slides[0]!.states.at(-1)!.value).toBe(38.5));
+
+    await user.type(screen.getByLabelText("Símbolo"), "%");
+    await waitFor(() => expect(saved.at(-1)!.slides[0]!.states.at(-1)!.symbol).toBe("%"));
+    expect(saved.at(-1)!.elements.at(-1)!.animateMagnitude).toEqual({ in: true, morph: true, out: false });
+  });
+
+  it("cambia un toggle de conteo en la identidad, no en la slide", async () => {
+    const user = userEvent.setup();
+    const { saved } = setup();
+    await user.click(screen.getByRole("button", { name: "Número" }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+
+    await user.click(screen.getByRole("switch", { name: "Contar al salir" }));
+
+    await waitFor(() => {
+      expect(saved.at(-1)!.elements.at(-1)!.animateMagnitude).toEqual({ in: true, morph: true, out: true });
+    });
+    // La decisión es del elemento: ninguna slide guarda una copia que pueda
+    // contradecir a la siguiente.
+    expect(saved.at(-1)!.slides[0]!.states.at(-1)).not.toHaveProperty("animateMagnitude");
+  });
+});
+
+describe("animación crop", () => {
+  it("declara la cortina con su borde y sin distancia", async () => {
+    const user = userEvent.setup();
+    const { saved } = setup();
+
+    await pickOption(user, "Animación", "Cortina");
+    await waitFor(() => {
+      expect(saved.at(-1)!.slides[0]!.motion?.in?.animation).toEqual({ kind: "crop", edge: "bottom" });
+    });
+
+    await pickOption(user, "Desde", "Arriba");
+    await waitFor(() => {
+      // El recorrido es el alto del propio elemento: una distancia aquí sería
+      // otro efecto, y el documento la rechaza.
+      expect(saved.at(-1)!.slides[0]!.motion?.in?.animation).toEqual({ kind: "crop", edge: "top" });
+    });
   });
 });
 

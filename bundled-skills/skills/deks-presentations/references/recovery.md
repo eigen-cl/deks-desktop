@@ -33,3 +33,4 @@ For destructive operations, never auto-retry after an uncertain response. Re-rea
 Read ordered checkpoints, element identities, and transitions. Compare them with the storyboard and journal. Resume from the first missing coherent scene rather than rebuilding completed slides. Use `undo_transaction` only for a known transaction ID or the newest confirmed mistaken transaction.
 
 Keep batches at or below 100 operations. After repeated 429/5xx responses, reduce batch size and stop if reads cannot establish authoritative state.
+

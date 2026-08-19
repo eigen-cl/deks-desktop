@@ -6,6 +6,7 @@ import {
   Circle,
   Copy,
   Frame,
+  Hash,
   Image,
   Loader,
   Minus,
@@ -58,8 +59,9 @@ export interface EditorProps {
   onExit(): void;
 }
 
-const TOOLS: Array<{ kind: InsertableKind; icon: typeof Type; labelKey: "editor.addText" | "editor.addRectangle" | "editor.addEllipse" | "editor.addLine" | "editor.addIcon" }> = [
+const TOOLS: Array<{ kind: InsertableKind; icon: typeof Type; labelKey: "editor.addText" | "editor.addNumber" | "editor.addRectangle" | "editor.addEllipse" | "editor.addLine" | "editor.addIcon" }> = [
   { kind: "text", icon: Type, labelKey: "editor.addText" },
+  { kind: "number", icon: Hash, labelKey: "editor.addNumber" },
   { kind: "rectangle", icon: Square, labelKey: "editor.addRectangle" },
   { kind: "ellipse", icon: Circle, labelKey: "editor.addEllipse" },
   { kind: "line", icon: Minus, labelKey: "editor.addLine" },
@@ -357,6 +359,8 @@ export function Editor({ t, source, persistence, saveState, projectPath, onImpor
             selected && run({ type: "update-element-identity", elementId: selected.id, patch: { name } })}
           onLockElement={(isLocked) =>
             selected && run({ type: "update-element-identity", elementId: selected.id, patch: { isLocked } })}
+          onAnimateMagnitude={(animateMagnitude) =>
+            selected && run({ type: "update-element-identity", elementId: selected.id, patch: { animateMagnitude } })}
           onPatchState={(patch) =>
             selected && run({ type: "update-element-state", slideId: slide.id, elementId: selected.id, patch })}
           onRemoveFromSlide={() => {

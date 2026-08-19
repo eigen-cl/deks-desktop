@@ -12,7 +12,7 @@ import type {
  */
 export type EditorElement = DeksElement & Omit<DeksElementState, "elementId">;
 
-export type InsertableKind = "text" | "rectangle" | "ellipse" | "line" | "icon";
+export type InsertableKind = "text" | "number" | "rectangle" | "ellipse" | "line" | "icon";
 
 export interface ImportedAsset {
   id: string;
@@ -85,6 +85,38 @@ export function createElement(
         lineHeight: 1.15,
         letterSpacing: 0,
         horizontalAlignment: "left",
+        verticalAlignment: "middle",
+        overflowMode: "hidden",
+      },
+    };
+  }
+  if (kind === "number") {
+    return {
+      element: {
+        id: elementId,
+        kind: "number",
+        name: "Número",
+        // Contar al entrar y al cambiar es el caso común de una cifra que
+        // argumenta; salir contando hasta cero es el raro.
+        animateMagnitude: { in: true, morph: true, out: false },
+        isLocked: false,
+      },
+      state: {
+        ...base,
+        ...box(0.4, 0.2),
+        value: 0,
+        decimals: 0,
+        groupSeparator: ",",
+        decimalSeparator: ".",
+        symbol: "",
+        symbolPosition: "after",
+        fill: document.palette.secondary,
+        fontFamily: "Poppins",
+        fontSize: Math.round(height * 0.14),
+        fontWeight: 600,
+        lineHeight: 1,
+        letterSpacing: 0,
+        horizontalAlignment: "center",
         verticalAlignment: "middle",
         overflowMode: "hidden",
       },
@@ -287,6 +319,9 @@ function identityOf(element: EditorElement): DeksElement {
   const { name, isLocked } = element;
   if (element.kind === "shape") {
     return { id: element.id, kind: "shape", shapeKind: element.shapeKind, name, isLocked };
+  }
+  if (element.kind === "number") {
+    return { id: element.id, kind: "number", animateMagnitude: element.animateMagnitude, name, isLocked };
   }
   return { id: element.id, kind: element.kind, name, isLocked } as DeksElement;
 }

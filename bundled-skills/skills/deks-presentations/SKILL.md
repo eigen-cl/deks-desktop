@@ -39,13 +39,13 @@ Use the client's OAuth connection for shared installations. Use a workspace PAT 
 
 - Before changing geometry or transitions, define the presentation sections and the stable story identities that live in each one. Preserve their anchor geometry inside the section; re-anchor only at a deliberate, visible scene boundary or when the stated central action requires movement.
 - Set one presentation `motion_beat_ms`; let the design skill choose its narrative tempo.
-- Treat slide `in_preset`, `in_duration_multiplier`, `out_preset`, and `out_duration_multiplier` as the default presence motion for the edge.
+- Declare the presentation motion once with `set_motion` and no `slide_id`; that declaration is complete and everything else inherits from it.
 - Prefer fade or no movement for titles, body copy, labels, citations, and other ordinary text. Text may enter, exit, or remain, but it must not drift as a side effect of rebalancing each slide.
 - Let persistent identities interpolate through shared geometry.
 - Give every adjacent edge one named central motion. Do not move other persistent elements unless their movement directly supports that same action.
-- Use `set_element_transition_motion` only to override a presence animation for a semantic exception.
-- Use `set_transition_override` only for edge-specific timing or to disable an individual shared animation.
-- Supported presence presets are `none`, `fade`, `glide-top`, `glide-right`, `glide-bottom`, and `glide-left`. Supported multipliers are `0.5`, `0.75`, `1.0`, `1.5`, and `2.0`.
+- Patch a slide when the whole checkpoint arrives or leaves differently, and an element state only when its semantic role differs from the flow. Pass just the properties that change: the rest keep inheriting.
+- Use `clear_motion` to go back to inheriting. Do not restate an inherited value; a restated value stops following the deck when the deck changes.
+- The roles are `in`, `out` and `morph`. Animations are `none`, `fade`, `slide` (with `edge` and an optional `distance`) and `scale` (with `from`) for presence, and `morph` or `cut` for continuity. Durations are beats between 0 and 8; delays are milliseconds.
 
 ## Verify and deliver
 

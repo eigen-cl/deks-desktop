@@ -1,5 +1,19 @@
 ## Changes
 
+- Add a number element: a figure that carries a magnitude rather than a string
+  of digits, so it can count towards its value on the same curve that moves it.
+  Three toggles on the element say which of enter, change and exit count. Its
+  format — decimals, separators, symbol and where the symbol sits — is written
+  into the file, never taken from the language of the machine that opens it.
+- Add two curtain animations that avoid the fade. `crop` moves the content
+  inside the element's own box, so one text can replace another in the same
+  place without the two dissolving through each other. `wipe` is the opposite:
+  the element stays still and the mask edge travels over it, uncovering
+  something already there.
+- Add a delay in beats beside the one in milliseconds. They add up. In beats it
+  follows the deck's tempo, so "start when the previous one ends" survives a
+  change of rhythm; in milliseconds it pins an exact instant.
+
 - Start from a new home that shows recent local presentations with their real rendered cover slide
   and lets you add the folders you already use.
 - Create widescreen, standard, square or custom presentations, with their palette, from a single

@@ -1,11 +1,13 @@
 # Motion as narrative
 
+For ready-made choreographies built on this contract, read `$deks-motion-patterns`.
+
 ## The model in one paragraph
 
 Every element plays exactly one of three roles at a boundary: `in` when it is only
 on the second slide, `out` when it is only on the first, and `morph` when it is on
-both. Each role carries an `animation`, a `duration_beats`, a `delay_ms` and an
-`easing`. The presentation declares all three roles in full; a slide and an element
+both. Each role carries an `animation`, a `duration_beats`, two delays that add —
+`delay_beats` and `delay_ms` — and an `easing`. The presentation declares all three roles in full; a slide and an element
 state declare only what they change, property by property. Write the exception where
 it belongs and let everything else inherit.
 

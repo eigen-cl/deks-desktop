@@ -4,7 +4,13 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
 const STABLE_TAG = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
-const EXPECTED_SKILLS = ["deks-presentations", "design-deks-presentations"];
+const EXPECTED_SKILLS = [
+  "deks-cloud-mcp",
+  "deks-desktop-mcp",
+  "deks-motion-patterns",
+  "deks-presentations",
+  "design-deks-presentations",
+];
 const CANONICAL_ICON_SHA256 = "750a06b4d6f1e7474f72320ed886038b22d8a0bf2979a6acd3fa5a43a8b7a4f3";
 
 function rootPath(root) {

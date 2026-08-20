@@ -1,0 +1,11 @@
+interface:
+  display_name: "DEKS Cloud MCP"
+  short_description: "Operate a DEKS workspace over the Cloud MCP"
+  default_prompt: "Use $deks-cloud-mcp to inspect and safely edit a presentation in a DEKS workspace."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "deks"
+      description: "DEKS presentation authoring server"
+      transport: "streamable_http"
+      url: "https://api-deks.eigen.cl/mcp/"

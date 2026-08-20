@@ -18,7 +18,7 @@ test("release tags are stable SemVer and match npm, Cargo and Tauri metadata", a
   await assert.rejects(assertReleaseContract(root, "v9.9.9"), /release_version_mismatch/);
 });
 
-test("the package contract enables native bundles and embeds only the two reviewed skills", async () => {
+test("the package contract enables native bundles and embeds only the five reviewed skills", async () => {
   const config = JSON.parse(await readFile(new URL("src-tauri/tauri.conf.json", root), "utf8"));
   assert.equal(config.bundle.active, true);
   assert.equal(config.bundle.targets, "all");
@@ -33,9 +33,15 @@ test("the package contract enables native bundles and embeds only the two review
   });
 
   const report = await verifyBundledSkills(root);
-  assert.deepEqual(report.skills, ["deks-presentations", "design-deks-presentations"]);
+  assert.deepEqual(report.skills, [
+    "deks-cloud-mcp",
+    "deks-desktop-mcp",
+    "deks-motion-patterns",
+    "deks-presentations",
+    "design-deks-presentations",
+  ]);
   assert.equal(report.source.repository, "https://github.com/eigen-cl/deks-plugin");
-  assert.equal(report.source.version, "0.1.11");
+  assert.equal(report.source.version, "0.2.0");
   for (const relativePath of report.files) {
     assert.equal((await lstat(join(new URL("bundled-skills/", root).pathname, relativePath))).isSymbolicLink(), false);
   }

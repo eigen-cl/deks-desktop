@@ -1,21 +1,36 @@
 {
   "source": {
     "repository": "https://github.com/eigen-cl/deks-plugin",
-    "version": "0.1.11"
+    "version": "0.2.0"
   },
   "skills": [
+    "deks-cloud-mcp",
+    "deks-desktop-mcp",
+    "deks-motion-patterns",
     "deks-presentations",
     "design-deks-presentations"
   ],
   "sha256": {
-    "skills/deks-presentations/SKILL.md": "4dcd8ef144c86932fa2192ba3c643e80f14ca055312a61756eb93f6493cf08a5",
+    "skills/deks-cloud-mcp/SKILL.md": "b95d600629a8ab0822183b6bf940934de1917108b846b213231d7b221d16e4f7",
+    "skills/deks-cloud-mcp/agents/openai.yaml": "f7182c14cc9d47cb80ec0ce0b9da25b1c2f2390b0a8aa7e7c9fdf92f25ff8efb",
+    "skills/deks-cloud-mcp/references/tools.md": "3f40856126614e0267e491f51eee34687a46ce71fccb8b45285722bb4ce69930",
+    "skills/deks-desktop-mcp/SKILL.md": "031fe6b800dce3c7658e94b10131c08121503449239c9139b6051ebf167a6a16",
+    "skills/deks-desktop-mcp/agents/openai.yaml": "5163b728eb075d6b3a37ccf4bb85d2fdbcd4248cc255b70b1cf70f07db020eb2",
+    "skills/deks-desktop-mcp/references/commands.md": "0cdb395de739e165b891db3f56c177cabee9420c6fe13e39b6063bba067d9e50",
+    "skills/deks-motion-patterns/SKILL.md": "dfa6b55891c9187ff388207f44256733ecb84291a5613416e82c0013d01d5e2d",
+    "skills/deks-motion-patterns/agents/openai.yaml": "95485056ec4405593a516d16faab71dea376df3d517d830c3c12231bfde35d9c",
+    "skills/deks-motion-patterns/references/catalog.md": "f9f8933af772fcfc4cec624eeb60f8342d1278b35e42edf14e1e96dac5865e7a",
+    "skills/deks-presentations/SKILL.md": "d683a030249e244f110c20e22791f21d49c1fb348c774d36bbab4668d59e1340",
     "skills/deks-presentations/agents/openai.yaml": "7eb4fa349fe3ef75e433129d6d97f72722f243a00e8c40a4e53546fc9989130b",
-    "skills/deks-presentations/references/recovery.md": "91a50f8f3f7f5beaa7b596c1f228b69413c9c7a08268a88650a46908129f09e6",
-    "skills/deks-presentations/references/tools.md": "b4fc875152e94b956e06379f738e06a852dcdb5fd5b1c7cc98d0494c5292687f",
-    "skills/design-deks-presentations/SKILL.md": "7c5618d85eefa410f66bedeff5b38c33a099fcc68a11caa1a8a78c8a7b149343",
+    "skills/deks-presentations/references/document-model.md": "1a974cc2ac8edf30830f9d6783b11f5ca23ba187e52d3aa630d16d99e5f19dc8",
+    "skills/deks-presentations/references/motion-contract.md": "fb3ebe0c85a1c155bd28ef1dac6f47fe883f588e5f89b0e05e5a75e2c347a93c",
+    "skills/deks-presentations/references/recovery.md": "7c1df375f8b1c1055da13a75d4c58224bf0e83e3589386f5940a0b3b574e8f07",
+    "skills/deks-presentations/references/validation.md": "5fc56fa0c80511f8211da13ac647601add6cc71fe7c183af14cf830559f266de",
+    "skills/design-deks-presentations/SKILL.md": "95e317a1250a36560dd7e9cd301eebff4182e3474d523b78938f8716605b7333",
     "skills/design-deks-presentations/agents/openai.yaml": "4ea5ddd27dec3a5a3f477c7e785c145d5ee34f026061a406fcec67cb53e45696",
     "skills/design-deks-presentations/references/audit.md": "4f9b8933cdd7f3c8f7c731b0a363729ff93638696de8614d8d207b0a3bfb8a78",
-    "skills/design-deks-presentations/references/motion.md": "5af7067b8af2362d42a6117651f31c506cb2db65bfeffed804fd5c428bc48ab6",
+    "skills/design-deks-presentations/references/motion.md": "205a434ec74eebd7123f7bb3e1c1e6910e3c76d1bbf8fe0ca407a72358ca0f9e",
+    "skills/design-deks-presentations/references/narrative.md": "9dc1d833b97cfdd2658cfdca03b04b8001e0486e4d62703996d121f3a142eee5",
     "skills/design-deks-presentations/references/story-and-evidence.md": "3b7d391ae4d19f9b97ff0e21236fe845c7d2654fcb0c5b2efb5b2b843d16b290",
     "skills/design-deks-presentations/references/visual-system.md": "943ebaecf7ce3fe81737770d65387446d1af68d699ffaf38dd00475bdc3d3cf3"
   }

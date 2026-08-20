@@ -1,4 +1,4 @@
-# DEKS MCP tool map
+# DEKS Cloud MCP tool map
 
 Remote endpoint: `https://api-deks.eigen.cl/mcp/`
 
@@ -34,7 +34,7 @@ Inside `apply_commands`, use the operation `{"command":"set_presentation_palette
 - `delete_presentation(presentation_id, expected_revision, confirmation_name)` — permanently delete the complete presentation history when this tool is present. It is intentionally non-idempotent and requires an explicit user deletion request, a fresh read, the exact revision, and exact presentation name.
 - `create_slide(presentation_id, expected_revision, idempotency_key, after_slide_id?, copy_from_slide_id?, slide_id?)`
 - `duplicate_slide(presentation_id, slide_id, expected_revision, idempotency_key)`
-- `update_slide(presentation_id, slide_id, expected_revision, idempotency_key, name?, background?, is_template?)` — motion is a separate command.
+- `update_slide(presentation_id, slide_id, expected_revision, idempotency_key, name?, background?, is_template?)` — identity only. Motion is a separate command.
 - `reorder_slides(presentation_id, slide_ids, expected_revision, idempotency_key)`
 - `delete_slide(presentation_id, slide_id, expected_revision, idempotency_key)`
 
@@ -91,12 +91,12 @@ Publishing is an external state change and does not create a snapshot: the publi
 ## Motion and history tools
 
 - `set_presentation_motion_beat(presentation_id, motion_beat_ms, expected_revision, idempotency_key)`
-- `set_motion(presentation_id, role, expected_revision, idempotency_key, slide_id?, element_id?, animation?, duration_beats?, delay_ms?, easing?)` — `role` is `in`, `out` or `morph`. Without `slide_id` it writes the presentation default and every property is required. With `slide_id`, and optionally `element_id`, it writes a patch: only the properties you pass change, the rest stay inherited.
+- `set_motion(presentation_id, role, expected_revision, idempotency_key, slide_id?, element_id?, animation?, duration_beats?, delay_beats?, delay_ms?, easing?)` — `role` is `in`, `out` or `morph`. Without `slide_id` it writes the presentation default and every property is required. With `slide_id`, and optionally `element_id`, it writes a patch: only the properties you pass change, the rest stay inherited.
 - `clear_motion(presentation_id, role, slide_id, expected_revision, idempotency_key, element_id?)` — drop a slide or element patch so the role inherits again. The presentation scope cannot be cleared: it is the value everything else inherits.
 - `apply_commands(presentation_id, commands, expected_revision, idempotency_key)` — apply 1–100 typed operations atomically as one revision and undo step. `update_slide` and `set_presentation_motion_beat` are not batch commands.
 - `undo_transaction(presentation_id, expected_revision, idempotency_key, transaction_id?)`
 
-Each role also carries two delays that **add**: `delay_beats` is a multiple of `motion_beat_ms`, so "start when the previous animation ends" is `delay_beats: 1` and stays true when the deck's tempo changes; `delay_ms` is absolute, for an offset that is about a specific instant. Both default to `0`. The wait is `motion_beat_ms * delay_beats + delay_ms`.
+Each role carries two delays that **add**: `delay_beats` is a multiple of `motion_beat_ms`, so "start when the previous animation ends" is `delay_beats: 1` and stays true when the deck's tempo changes; `delay_ms` is absolute, for an offset that is about a specific instant. Both default to `0`. The wait is `motion_beat_ms * delay_beats + delay_ms`.
 
 `animation` is one object, discriminated by `kind`:
 
@@ -107,7 +107,7 @@ Each role also carries two delays that **add**: `delay_beats` is a multiple of `
 - `{"kind": "scale", "from": 0.8}`;
 - `{"kind": "morph"}` or `{"kind": "cut"}` for the `morph` role only.
 
-`duration_beats` is a multiple of `motion_beat_ms` between 0 and 8; `delay_ms` is real milliseconds up to 60000. `easing` is `linear`, `ease-in`, `ease-out`, `ease-in-out`, or four cubic-bezier controls `[x1,y1,x2,y2]` with x between 0 and 1.
+`duration_beats` is a multiple of `motion_beat_ms` between 0 and 8; `delay_beats` is a multiple of it between 0 and 16; `delay_ms` is real milliseconds up to 60000. `easing` is `linear`, `ease-in`, `ease-out`, `ease-in-out`, or four cubic-bezier controls `[x1,y1,x2,y2]` with x between 0 and 1.
 
 ## Exact batch envelope
 

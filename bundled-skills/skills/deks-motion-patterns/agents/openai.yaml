@@ -1,0 +1,11 @@
+interface:
+  display_name: "DEKS Motion Patterns"
+  short_description: "Reusable choreographies for DEKS checkpoints"
+  default_prompt: "Use $deks-motion-patterns to choose a concrete animation pattern for this checkpoint edge."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "deks"
+      description: "DEKS presentation authoring server"
+      transport: "streamable_http"
+      url: "https://api-deks.eigen.cl/mcp/"

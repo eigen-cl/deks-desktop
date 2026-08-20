@@ -18,7 +18,13 @@ use tauri::{Emitter, Manager, State};
 
 const DOCUMENT_FILE: &str = "document.deks.json";
 const LOCK_FILE: &str = "project.lock";
-const SKILL_NAMES: [&str; 2] = ["deks-presentations", "design-deks-presentations"];
+const SKILL_NAMES: [&str; 5] = [
+    "deks-cloud-mcp",
+    "deks-desktop-mcp",
+    "deks-motion-patterns",
+    "deks-presentations",
+    "design-deks-presentations",
+];
 const SETTINGS_FILE: &str = "settings.json";
 const ASSETS_DIR: &str = "assets";
 /// Techo por asset. Un documento local no debería arrastrar un archivo que la

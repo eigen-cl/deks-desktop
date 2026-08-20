@@ -1,5 +1,11 @@
 ## Changes
 
+- Open presentations written by an earlier version again. A file from 0.4.0 to
+  0.7.0 is already canonical, so it skipped the migration for pre-1.0 projects,
+  and the newer contract then rejected it for a motion property it could not
+  have declared. The missing property is inherited instead; whatever the file
+  does declare is left untouched.
+
 - Add a number element: a figure that carries a magnitude rather than a string
   of digits, so it can count towards its value on the same curve that moves it.
   Three toggles on the element say which of enter, change and exit count. Its

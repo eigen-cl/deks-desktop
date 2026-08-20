@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { assertDeksDocument } from "@deks-js/document";
 import { canonicalId, isLegacyDocument, toCanonicalDocument } from "../src/legacy-document";
+import { createPresentation } from "../src/model";
 
 const legacy = {
   id: "presentation-1",
@@ -65,5 +66,42 @@ describe("proyectos anteriores al contrato canónico", () => {
     const canonical = toCanonicalDocument(legacy);
 
     expect(toCanonicalDocument(canonical)).toEqual(canonical);
+  });
+});
+
+describe("un documento canónico anterior al contrato vigente", () => {
+  /** Lo que Desktop 0.6.0 escribía: canónico, pero sin la espera en beats. */
+  function writtenBeforeDelayBeats() {
+    const document = JSON.parse(JSON.stringify(createPresentation("Deck", { width: 1600, height: 900 }, "deck"))) as Record<string, any>;
+    for (const role of ["in", "out", "morph"]) delete document.motion[role].delayBeats;
+    return document;
+  }
+
+  it("completa la propiedad que le falta en vez de rechazar el archivo", () => {
+    const older = writtenBeforeDelayBeats();
+    expect(() => assertDeksDocument(older)).toThrow(/delayBeats/);
+
+    const opened = toCanonicalDocument(older);
+    expect(() => assertDeksDocument(opened)).not.toThrow();
+    // Hereda del contrato vigente, que es lo que la raíz debe declarar entera.
+    expect(opened.motion.in.delayBeats).toBe(0);
+    expect(opened.motion.morph.delayBeats).toBe(0);
+  });
+
+  it("no toca lo que el documento sí declara", () => {
+    const older = writtenBeforeDelayBeats();
+    older.motion.in.durationBeats = 2.5;
+    older.motion.in.easing = "linear";
+    older.motion.out.delayMs = 320;
+
+    const opened = toCanonicalDocument(older);
+    expect(opened.motion.in.durationBeats).toBe(2.5);
+    expect(opened.motion.in.easing).toBe("linear");
+    expect(opened.motion.out.delayMs).toBe(320);
+  });
+
+  it("deja intacto un documento que ya está completo", () => {
+    const current = createPresentation("Deck", { width: 1600, height: 900 }, "deck");
+    expect(toCanonicalDocument(current)).toEqual(current);
   });
 });

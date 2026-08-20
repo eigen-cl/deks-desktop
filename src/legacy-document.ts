@@ -103,10 +103,35 @@ export function upgradeLegacyDocument(value: unknown): DeksDocument {
 }
 
 /** Devuelve el documento canónico, migrando sólo si hace falta. */
+/**
+ * Completa las propiedades de movimiento que el documento no declara.
+ *
+ * Un archivo escrito por una versión anterior ya es canónico —dice
+ * `format: "deks"`— pero puede no traer una propiedad que el contrato sumó
+ * después. La declaración raíz tiene que estar completa, así que lo que falta
+ * se hereda del contrato vigente en vez de rechazar el archivo: el proyecto es
+ * de la persona, y que la app le sume una propiedad no es motivo para no
+ * abrírselo. Lo que el documento sí declara nunca se toca.
+ */
+function completeMotion(value: unknown): unknown {
+  if (!value || typeof value !== "object") return value;
+  const document = value as Record<string, any>;
+  const motion = document.motion;
+  if (!motion || typeof motion !== "object") return value;
+  const completed: Record<string, unknown> = {};
+  for (const role of ["in", "out", "morph"] as const) {
+    const declared = motion[role];
+    if (!declared || typeof declared !== "object") return value;
+    completed[role] = { ...CORE_DEFAULT_MOTION[role], ...declared };
+  }
+  return { ...document, motion: completed };
+}
+
 export function toCanonicalDocument(value: unknown): DeksDocument {
   if (!isLegacyDocument(value)) {
-    assertDeksDocument(value);
-    return value;
+    const completed = completeMotion(value);
+    assertDeksDocument(completed);
+    return completed;
   }
   return upgradeLegacyDocument(value);
 }

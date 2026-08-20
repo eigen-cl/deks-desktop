@@ -1,5 +1,19 @@
 ## Changes
 
+- Ship five bundled skills instead of two, split by host. The bundle carried a
+  single operating skill whose only tool map was the cloud one, so an agent
+  installed from this app learned to call tools the local server does not have,
+  and to send a command envelope it does not accept. There is now one skill for
+  the local server — its five tools, the command shape with an example per
+  command, the folder lock, and an explicit list of what does not exist here —
+  and one for the cloud.
+- Bundle a method for building a presentation, not only for reviewing one:
+  breaking a subject into topics, telling each topic as a narration, and the
+  difference between advancing inside a narration and moving to the next one,
+  which is what decides whether a checkpoint may recompose or must hold still.
+- Bundle a catalogue of reusable animation patterns with the commands to build
+  each one, led by promoting a line of a list into the next slide's title.
+
 - Open presentations written by an earlier version again. A file from 0.4.0 to
   0.7.0 is already canonical, so it skipped the migration for pre-1.0 projects,
   and the newer contract then rejected it for a motion property it could not

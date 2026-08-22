@@ -1,8 +1,9 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { assertDeksDocument, type DeksDocument } from "@deks-js/document";
+import { applyDeksCommands, assertDeksDocument, type DeksDocument } from "@deks-js/document";
 import { Editor } from "../src/editor/Editor";
+import { createSlide } from "../src/editor/elements";
 import { translator } from "../src/i18n";
 import { createPresentation } from "../src/model";
 
@@ -47,6 +48,16 @@ function setup(document: DeksDocument = createPresentation("Deck", { width: 1600
   return { saved, imported };
 }
 
+function presentationWithThreeSlides(): DeksDocument {
+  const first = createPresentation("Deck", { width: 1600, height: 900 }, "deck");
+  const second = createSlide(first, "Dos");
+  const third = createSlide(first, "Tres");
+  return applyDeksCommands(first, [
+    { type: "create-slide", slide: second, afterSlideId: first.slides[0]!.id },
+    { type: "create-slide", slide: third, afterSlideId: second.id },
+  ]).document;
+}
+
 /**
  * Los desplegables son Radix, no `<select>` nativo: se abren y se elige la
  * opción por su etiqueta visible, igual que haría una persona.
@@ -59,6 +70,63 @@ async function pickOption(user: ReturnType<typeof userEvent.setup>, label: strin
 beforeEach(() => rendered.mockClear());
 
 describe("editor de escritorio", () => {
+  it("recorre las slides con las flechas izquierda y derecha sin sobrepasar los límites", () => {
+    setup(presentationWithThreeSlides());
+    const first = screen.getByRole("button", { name: "Slide 1: Inicio" });
+    const second = screen.getByRole("button", { name: "Slide 2: Dos" });
+    const third = screen.getByRole("button", { name: "Slide 3: Tres" });
+
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(first).toHaveAttribute("aria-current", "true");
+
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(second).toHaveAttribute("aria-current", "true");
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(third).toHaveAttribute("aria-current", "true");
+
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(third).toHaveAttribute("aria-current", "true");
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(second).toHaveAttribute("aria-current", "true");
+  });
+
+  it("no cambia de slide mientras se edita un input, textarea, select o contenteditable", () => {
+    setup(presentationWithThreeSlides());
+    const first = screen.getByRole("button", { name: "Slide 1: Inicio" });
+    const targets = [
+      document.createElement("input"),
+      document.createElement("textarea"),
+      document.createElement("select"),
+      document.createElement("div"),
+    ];
+    targets.at(-1)!.setAttribute("contenteditable", "true");
+    targets.forEach((target) => {
+      document.body.append(target);
+      fireEvent.keyDown(target, { key: "ArrowRight" });
+      expect(first).toHaveAttribute("aria-current", "true");
+    });
+  });
+
+  it("deja las flechas exclusivamente en manos de Presenter mientras está activo", async () => {
+    const user = userEvent.setup();
+    setup(presentationWithThreeSlides());
+    const first = screen.getByRole("button", { name: "Slide 1: Inicio" });
+
+    await user.click(screen.getByRole("button", { name: "Presentar" }));
+    const stage = await screen.findByRole("dialog", { name: "Deck" });
+    expect(within(stage).getByText("1 / 3")).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(await within(stage).findByText("2 / 3")).toBeInTheDocument();
+    // Si ambos listeners fueran dueños de la flecha, el editor oculto también
+    // habría avanzado y al cerrar aparecería en una slide distinta.
+    expect(first).toHaveAttribute("aria-current", "true");
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Deck" })).not.toBeInTheDocument());
+    expect(first).toHaveAttribute("aria-current", "true");
+  });
+
   it("inserta un texto como una sola revisión y lo deja seleccionado", async () => {
     const user = userEvent.setup();
     const { saved } = setup();

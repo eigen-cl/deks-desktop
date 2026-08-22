@@ -74,12 +74,17 @@ better then to write the title as its own element and use **replacement**.
 
 ## Staggered exit and staggered entry
 
-**The move.** Siblings leave or arrive one after another, top to bottom, so the eye
-reads an order.
+**The move.** Siblings leave or arrive in visual bands, so the eye reads an order
+without falsely sequencing elements that share one row.
 
 **Why it works.** `delayBeats` is musical: `0.12` is 12% of a beat, and a rising
 series of them is a staircase that survives a change of tempo. In milliseconds the
 same chain falls out of step the day someone edits `motionBeatMs`.
+
+First group the elements by their full vertical bounds and text baselines. Elements
+on the same row or baseline share a delay; increase it only for the next visual band
+in the reading direction. Do not sort by `y` alone: boxes of different heights may
+belong to the same band even when their top edges differ.
 
 ```json
 {"type": "set-motion", "scope": {"kind": "element", "slideId": "apertura", "elementId": "story-station-2"},
@@ -88,8 +93,9 @@ same chain falls out of step the day someone edits `motionBeatMs`.
            "durationBeats": 0.6, "delayBeats": 0.12, "easing": "ease-in"}}
 ```
 
-Repeat with `delayBeats` `0`, `0.12`, `0.24`, `0.36`, `0.48`. Keep the step small:
-above roughly `0.2` per item the group stops reading as one gesture and starts
+For five successive bands, repeat with `delayBeats` `0`, `0.12`, `0.24`, `0.36`,
+`0.48`. If two elements occupy one band, give both the same value. Keep the step
+small: above roughly `0.2` per band the group stops reading as one gesture and starts
 reading as separate events.
 
 **Do not use it** on more than about six items, and never on something the audience
@@ -110,13 +116,18 @@ same boundary, so two texts are never legible in the same place at once.
 
 ```json
 {"type": "set-motion", "scope": {"kind": "element", "slideId": "b", "elementId": "claim-new"},
- "role": "in", "patch": {"animation": {"kind": "crop", "edge": "bottom"}, "durationBeats": 0.7, "delayBeats": 0.5}}
+ "role": "in", "patch": {"animation": {"kind": "crop", "edge": "bottom"}, "durationBeats": 0.7, "delayBeats": 0.7}}
 {"type": "set-motion", "scope": {"kind": "element", "slideId": "a", "elementId": "claim-old"},
  "role": "out", "patch": {"animation": {"kind": "crop", "edge": "top"}, "durationBeats": 0.7}}
 ```
 
 An honest `{"kind":"none"}` cut is also better than a fade here. Abrupt is a choice
 the audience can follow; mush is not.
+
+The `0.7`-beat delay is not decorative: it equals the outgoing duration, so the old
+line is fully outside the zone before the new one starts. If the outgoing motion has
+its own delay, add it too; the invariant is `incoming delay >= outgoing delay +
+outgoing duration`.
 
 **Do not use it** when nothing replaces the outgoing text. A paragraph that is simply
 done can fade out — there is nothing behind it for the dissolve to muddy.
@@ -207,7 +218,7 @@ and the incoming one with an `in` delayed behind it:
 {"type": "set-motion", "scope": {"kind": "element", "slideId": "a", "elementId": "plan-old"},
  "role": "out", "patch": {"animation": {"kind": "crop", "edge": "top"}, "durationBeats": 0.7, "easing": "ease-in"}}
 {"type": "set-motion", "scope": {"kind": "element", "slideId": "b", "elementId": "plan-new"},
- "role": "in", "patch": {"animation": {"kind": "crop", "edge": "bottom"}, "durationBeats": 0.7, "delayBeats": 0.6}}
+ "role": "in", "patch": {"animation": {"kind": "crop", "edge": "bottom"}, "durationBeats": 0.7, "delayBeats": 0.7}}
 ```
 
 The delay is the meaning: without it the two overlap and the substitution reads as an

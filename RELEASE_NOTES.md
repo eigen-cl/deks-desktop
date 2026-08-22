@@ -1,5 +1,12 @@
 ## Changes
 
+- Move through slides with the left and right arrow keys while editing. Text
+  inputs, textareas, selects and contenteditable regions keep ownership of those
+  keys, and Presenter remains the only keyboard owner while it is open.
+- Teach bundled presentation skills to stagger by visual bands and to keep a
+  text zone empty until its outgoing copy has fully left. The updated guidance
+  also distinguishes slide, crop, wipe, fade and cut by what the motion means.
+
 - Reproduce delayed transitions reliably in presentation mode. Desktop now uses
   the canonical Core 4.1 renderer, which explicitly starts animations even when
   the host WebView creates them paused and advances only after the last fade,
@@ -82,7 +89,7 @@
 
 - `docker compose run --rm desktop npm run verify`
 - `docker compose run --rm rust cargo test --no-default-features`
-- `docker compose run --rm -e GITHUB_REF_NAME=v0.8.1 desktop npm run release:validate`
+- `docker compose run --rm -e GITHUB_REF_NAME=v0.8.2 desktop npm run release:validate`
 - Download the installer for your platform and `SHA256SUMS.txt` from the release, then verify the
   matching checksum before installation.
 - macOS artifacts are signed, notarized and stapled. Windows and Linux artifacts are compiled

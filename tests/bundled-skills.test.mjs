@@ -104,6 +104,19 @@ test("las skills enseñan el elemento number y las dos animaciones enmascaradas"
   assert.match(motion, /same position/i);
 });
 
+test("el método distingue desplazamiento, crop y wipe y escalona por bandas", async () => {
+  const design = files.get("design-deks-presentations/SKILL.md");
+  const motion = files.get("design-deks-presentations/references/motion.md");
+  const patterns = files.get("deks-motion-patterns/references/catalog.md");
+  const guidance = `${design}\n${motion}\n${patterns}`;
+
+  assert.match(guidance, /fixed mask/i, "crop debe describir contenido que viaja dentro de una máscara fija");
+  assert.match(guidance, /mask edge/i, "wipe debe describir el borde de la máscara en movimiento");
+  assert.match(guidance, /visual bands/i, "el stagger debe agrupar por bandas visuales");
+  assert.match(guidance, /same (?:row|baseline)/i, "los elementos alineados deben compartir inicio");
+  assert.doesNotMatch(guidance, /ordinary text[^.\n]*(?:only|with) fade or no movement/i);
+});
+
 test("cada host tiene su propia skill y ninguna enseña las tools de la otra", async () => {
   const cloud = files.get("deks-cloud-mcp/SKILL.md");
   const desktop = files.get("deks-desktop-mcp/SKILL.md");

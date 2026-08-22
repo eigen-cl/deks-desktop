@@ -1,5 +1,10 @@
 ## Changes
 
+- Reproduce delayed transitions reliably in presentation mode. Desktop now uses
+  the canonical Core 4.1 renderer, which explicitly starts animations even when
+  the host WebView creates them paused and advances only after the last fade,
+  wipe or crop has finished.
+
 - Ship five bundled skills instead of two, split by host. The bundle carried a
   single operating skill whose only tool map was the cloud one, so an agent
   installed from this app learned to call tools the local server does not have,
@@ -77,7 +82,7 @@
 
 - `docker compose run --rm desktop npm run verify`
 - `docker compose run --rm rust cargo test --no-default-features`
-- `docker compose run --rm -e GITHUB_REF_NAME=v0.5.0 desktop npm run release:validate`
+- `docker compose run --rm -e GITHUB_REF_NAME=v0.8.1 desktop npm run release:validate`
 - Download the installer for your platform and `SHA256SUMS.txt` from the release, then verify the
   matching checksum before installation.
 - macOS artifacts are signed, notarized and stapled. Windows and Linux artifacts are compiled

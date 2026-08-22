@@ -48,15 +48,32 @@ test("the package contract enables native bundles and embeds only the five revie
 });
 
 test("the installed MCP payload is self-contained apart from documented Node and Chromium prerequisites", async () => {
+  const desktopPackageJson = JSON.parse(await readFile(new URL("package.json", root), "utf8"));
+  const desktopPackageLock = JSON.parse(await readFile(new URL("package-lock.json", root), "utf8"));
   const packageJson = JSON.parse(await readFile(new URL("bundled-mcp/package.json", root), "utf8"));
+  const packageLock = JSON.parse(await readFile(new URL("bundled-mcp/package-lock.json", root), "utf8"));
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(desktopPackageJson.dependencies).filter(([name]) => name.startsWith("@deks-js/"))),
+    {
+      "@deks-js/document": "4.1.0",
+      "@deks-js/render-preview": "4.1.0",
+      "@deks-js/renderer-core": "4.1.0",
+    },
+  );
   assert.deepEqual(packageJson.engines, { node: ">=22" });
   assert.equal(packageJson.scripts.start, "node mcp/server.mjs");
   assert.equal(packageJson.scripts["install-browser"], "playwright install chromium");
   assert.deepEqual(packageJson.dependencies, {
-    "@deks-js/document": "4.0.0",
-    "@deks-js/render-preview": "4.0.0",
+    "@deks-js/document": "4.1.0",
+    "@deks-js/render-preview": "4.1.0",
     "playwright": "1.62.1",
   });
+  for (const lock of [desktopPackageLock, packageLock]) {
+    assert.doesNotMatch(JSON.stringify(lock), /file:|\.\.\/deks-core|artifacts\//);
+    assert.equal(lock.packages["node_modules/@deks-js/document"]?.version, "4.1.0");
+    assert.equal(lock.packages["node_modules/@deks-js/render-preview"]?.version, "4.1.0");
+    assert.equal(lock.packages["node_modules/@deks-js/renderer-core"]?.version, "4.1.0");
+  }
   const readme = await readFile(new URL("bundled-mcp/README.md", root), "utf8");
   assert.match(readme, /Node\.js 22/);
   assert.match(readme, /npm ci --omit=dev/);

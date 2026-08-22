@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -41,6 +41,8 @@ import {
 import { useEditorPreferences } from "./preferences";
 import { useAssetUrls } from "./useAssetUrls";
 import { useEditorDocument, type EditorPersistence } from "./useEditorDocument";
+import { isTextEditingTarget } from "./keyboard";
+import { useSlideKeyboardNavigation } from "./useSlideKeyboardNavigation";
 import { IconButton } from "../ui/IconButton";
 import { Menu, type MenuItem } from "../ui/Menu";
 import type { Translate } from "../i18n";
@@ -82,6 +84,17 @@ export function Editor({ t, source, persistence, saveState, projectPath, onImpor
   const [menu, setMenu] = useState<MenuState>();
   const [settings, setSettings] = useState(false);
   const [presenting, setPresenting] = useState(false);
+  const navigateToSlide = useCallback((slideId: string) => {
+    setActiveSlideId(slideId);
+    setSelectedId(undefined);
+  }, []);
+
+  useSlideKeyboardNavigation({
+    slides: deck.slides,
+    activeSlideId,
+    enabled: !presenting,
+    onNavigate: navigateToSlide,
+  });
 
   // Una slide borrada —aquí o por un agente— no puede dejar la vista apuntando
   // a algo que ya no existe.
@@ -95,8 +108,7 @@ export function Editor({ t, source, persistence, saveState, projectPath, onImpor
   // pisar el deshacer nativo de un texto que se está escribiendo.
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      if (isTextEditingTarget(event.target)) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
         event.preventDefault();
         void (event.shiftKey ? redo() : undo());
@@ -120,8 +132,7 @@ export function Editor({ t, source, persistence, saveState, projectPath, onImpor
   useEffect(() => {
     if (!slide) return;
     const key = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      if (isTextEditingTarget(event.target)) return;
       if (!selectedId) return;
       if (event.key === "Delete" || event.key === "Backspace") {
         event.preventDefault();

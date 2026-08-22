@@ -29,15 +29,24 @@ someone edits `motion_beat_ms`. Use either sparingly: a delay on one element let
 it land after the one it depends on, not to build an implicit choreography of
 many.
 
+When an entrance or exit should read as a stagger, group elements into **visual
+bands** before assigning delays. Compare their full vertical bounds, visual centres,
+and text baselines rather than sorting by `y` alone: elements on the same row or
+baseline should normally share a start time. Increase the delay between bands in the
+reading direction. Within one band, add another step only when the content itself is
+sequential; otherwise different delays invent an order the composition does not have.
+
 ## Let the presentation carry the flow
 
 Set the presentation-level motion first, with `set_motion` and no `slide_id`. That
 declaration must be complete; it is the only one that is. Most elements should never
 need anything else.
 
-Text may enter, exit or remain; do not make it travel across the canvas merely
-because the composition changes between checkpoints. But do not reach for a fade
-either — see below.
+Text may enter, exit or remain. When the argument implies no direction or boundary,
+`fade` or `none` remains the quiet default. Use a short `slide` only for meaningful
+lateral arrival or departure, and `crop` when the content should travel inside its
+fixed mask. Do not make text travel merely because the composition changes between
+checkpoints.
 
 Before authoring motion, write a section contract with:
 
@@ -99,19 +108,31 @@ downwards, a figure that should not appear to fly in.
 When one text replaces another in the same position, reach for `crop`: the
 outgoing line leaves behind the boundary the incoming one arrives behind.
 
+The rectangle is an exclusive temporal zone, not merely a shared layout slot. Give
+the two strings different identities and resolve their timings so the outgoing text
+is fully gone before the incoming one starts. With beat-only timing, require
+`incoming delay_beats >= outgoing delay_beats + outgoing duration_beats`; include
+the absolute delays in the same comparison when either side uses `delay_ms`. A
+shared text identity whose content changes compiles as a cross-fade and cannot
+satisfy this invariant. Preserve identity only when the string itself is unchanged.
+A changing magnitude is different: model it as one persistent `number` identity so
+the value counts without replacing the element.
+
 ## How to animate text
 
-Prefer `crop`, a short `slide`, or an honest `cut` over a fade. A fade on text reads
-as mush: letterforms are thin, high-contrast and full of holes, so a half-opacity
-word looks like a rendering defect rather than like something arriving.
+Choose the text motion from the event. Use `crop` when text arrives inside a fixed
+mask, a short `slide` when it genuinely enters from or exits toward a meaningful
+side, and an honest `cut` when immediacy is the point. Keep `fade` or `none` as the
+default when no direction is implied and no other string is competing for the same
+zone.
 
-It is worst exactly where it is most tempting — when one line of text is replaced by
-another in the same position. The two strings cross-dissolve through each other, the
-descenders of the outgoing line overlap the caps of the incoming one, and for a third
-of a second the audience reads neither. `crop` fixes this completely: the outgoing
-line leaves behind its own boundary while the incoming one arrives behind the same
-one, and at no point are two texts legible in the same place. A `cut` is also better
-than a fade here; it is abrupt, but abrupt is a choice the audience can follow.
+A fade becomes mush when one line replaces another in the same position. The two
+strings cross-dissolve through each other, the descenders of the outgoing line
+overlap the caps of the incoming one, and for a third of a second the audience reads
+neither. `crop` avoids that collision when its timings preserve the exclusive zone:
+the outgoing line leaves behind its boundary before the incoming one arrives behind
+the same boundary. A `cut` is also better than an overlapping fade here; it is
+abrupt, but abrupt is a choice the audience can follow.
 
 Fading text out is fine when nothing replaces it. A paragraph that is simply done, a
 citation that stops being relevant, a label whose object left — those can dissolve,
@@ -167,7 +188,9 @@ For every adjacent checkpoint edge:
 6. Play or otherwise inspect the real transition at normal speed.
 7. Confirm the visible result matches the prediction and narrative direction and that
    no secondary drift competes for attention.
-8. If an element merely appears despite a non-`none` inherited animation, treat it as
+8. For every pair of different strings whose rectangles overlap across the edge,
+   confirm the outgoing text is fully gone before the incoming text starts.
+9. If an element merely appears despite a non-`none` inherited animation, treat it as
    a renderer or contract defect. Capture the smallest reproducible edge and fix the
    implementation before compensating with per-element patches.
 

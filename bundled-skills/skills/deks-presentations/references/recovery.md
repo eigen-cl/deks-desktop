@@ -24,10 +24,12 @@ reject a reused key whose payload differs.
   issue a **new** semantic transaction with a **new** key. Never re-send the old
   batch against the new revision without re-reading what changed.
 - **Quota rejection** (Cloud `resource_limit_reached`) — nothing mutated. Replan or
-  ask the user. Never delete existing content to make room.
-- **`path_not_authorized`** (Desktop) — the project resolves outside the folder the
-  user authorized. Not retryable. Ask the user to authorize or open that folder in
-  the app.
+  ask the user. A workspace storage quota is distinct from the per-image and
+  portable `.deks` interoperability bounds; inspect the reported quota instead of
+  guessing which one failed. Never delete existing content to make room.
+- **`path_not_authorized`** (Desktop) — the `.deks` file or its hidden local state
+  resolves outside the root the user authorized. Not retryable. Ask the user to
+  authorize the parent folder that contains the `.deks` in the app.
 - **429, 5xx, timeout, disconnect, or a malformed response** — the result is
   **uncertain**. Do not mutate again yet.
 

@@ -17,8 +17,14 @@ npm run install-browser
 ```
 
 Then configure the agent to launch `node /absolute/path/deks-local-mcp/mcp/server.mjs` with only
-`DEKS_PROJECTS_ROOT=/absolute/path/to/my-deks-projects` in its MCP environment. Do not put tokens,
+`DEKS_PROJECTS_ROOT=/absolute/path/to/my-deks-files` in its MCP environment. Every direct `*.deks`
+file in that root becomes visible. Do not put tokens,
 credentials, arbitrary command arguments or per-presentation paths in that configuration.
 
 The runtime makes no Cloud requests. The preview browser blocks network access. Reinstall into a new
 empty directory when upgrading; Desktop intentionally never overwrites a prior runtime.
+
+`add_asset` accepts PNG, JPEG, GIF and WebP up to 50 MB, or sanitized static SVG up to 5 MB. It
+validates dimensions and SVG structure before acquiring a project lock, then hashes and stores only
+the canonical bytes. The pinned Core 4.2 preview renders those SVG bytes without allowing browser
+network access.

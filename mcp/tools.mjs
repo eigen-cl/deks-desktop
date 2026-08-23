@@ -40,7 +40,7 @@ export const MCP_TOOLS = Object.freeze([
   },
   {
     name: "add_asset",
-    description: "Register raster image bytes as an embedded asset of a local DEKS presentation and declare it in the document. Returns the asset id to reference from an image element via apply_commands. PNG, JPEG, GIF or WebP; the media type is decided by the bytes, not by what the caller declares.",
+    description: "Register safe image bytes as an embedded asset of a local DEKS presentation and declare it in the document. Returns the asset id to reference from an image element via apply_commands. PNG, JPEG, GIF, WebP or sanitized static SVG; the media type is decided by the bytes, not by what the caller declares.",
     inputSchema: {
       type: "object",
       additionalProperties: false,

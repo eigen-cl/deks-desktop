@@ -27,7 +27,8 @@ export interface HomeProps {
   loadCover?(path: string): Promise<DeksDocument>;
   onCreate(name: string, canvas: { width: number; height: number }, palette: Record<PaletteKey, string>): void;
   onOpenProject(path: string): void;
-  onOpenFolder(): void;
+  onOpenFile(): void;
+  onMigrateFolder(): void;
   onAddSourceFolder(): void;
   onRemoveSourceFolder(path: string): void;
   onDeleteProject(path: string): void;
@@ -53,7 +54,8 @@ export function Home({
   loadCover = readProjectCover,
   onCreate,
   onOpenProject,
-  onOpenFolder,
+  onOpenFile,
+  onMigrateFolder,
   onAddSourceFolder,
   onRemoveSourceFolder,
   onDeleteProject,
@@ -103,8 +105,11 @@ export function Home({
               <p>{t("home.tagline")}</p>
             </div>
             <div className="home__heading-actions">
-              <button type="button" className="button" disabled={busy} onClick={onOpenFolder}>
-                <FolderOpen aria-hidden="true" /> {t("home.openFolder")}
+              <button type="button" className="button" disabled={busy} onClick={onMigrateFolder}>
+                <FolderOpen aria-hidden="true" /> {t("home.migrateFolder")}
+              </button>
+              <button type="button" className="button" disabled={busy} onClick={onOpenFile}>
+                <FolderOpen aria-hidden="true" /> {t("home.openFile")}
               </button>
               <button type="button" className="button button--primary" disabled={busy} onClick={() => setCreating(true)}>
                 <Plus aria-hidden="true" /> {t("home.newPresentation")}

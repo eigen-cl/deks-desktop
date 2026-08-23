@@ -76,6 +76,22 @@ describe("portabilidad del documento editado en escritorio", () => {
     expect(() => assertDeksDocument(read.document)).not.toThrow();
   });
 
+  it("conserva los bytes de una imagen al viajar por el archivo .deks", async () => {
+    const pixels = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAEAQH/6WQzgAAAAABJRU5ErkJggg=="), (character) => character.charCodeAt(0));
+    const document = {
+      ...seed(),
+      assets: [{ id: "asset-1", kind: "embedded" as const, mediaType: "image/png", originalFilename: "pixel.png" }],
+    };
+
+    const archive = await createDeksFile(document, [{ id: "asset-1", mediaType: "image/png", bytes: pixels }]);
+    const reopened = await readDeksFile(archive.bytes);
+
+    expect(reopened.document).toEqual(document);
+    expect(reopened.assets).toHaveLength(1);
+    expect(reopened.assets[0]!.id).toBe("asset-1");
+    expect(reopened.assets[0]!.bytes).toEqual(pixels);
+  });
+
   it("duplicar una slide conserva sus estados y estrena identidad", () => {
     let document = seed();
     const slideId = document.slides[0]!.id;

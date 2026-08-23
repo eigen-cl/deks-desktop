@@ -33,9 +33,15 @@ merges role by role, so setting `primary` alone leaves the other five in place.
 
 ## Assets
 
-Use the `add_asset` tool for image bytes: it stores the file and declares the
-descriptor in one step. `define-asset` is for a descriptor whose bytes are already
-present, and `remove-asset` refuses to drop one that any state still references.
+Use the `add_asset` tool for image bytes: it validates PNG/JPEG/GIF/WebP up to
+50 MB or canonicalizes a safe static SVG up to 5 MB, then embeds the admitted
+bytes and declares the descriptor in one step. Every image is capped at 16,384
+units per side and 40 megapixels of logical width × height. Safe SVG
+has no scripts, CSS/fonts/`<text>`, `foreignObject`, nested `<image>`, `<use>`,
+SMIL content or remote/data references. `define-asset` is only for a descriptor
+whose exact admitted bytes are already present; it is never an upload or
+validation bypass. `remove-asset` refuses to drop one that any state still
+references.
 
 ```json
 {"type": "remove-asset", "assetId": "a1b2c3"}

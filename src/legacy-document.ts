@@ -14,9 +14,9 @@ import {
  * canónico separa la identidad (`elements`) del checkpoint (`slides[].states`) y
  * además restringe la gramática de IDs, que antes admitía `:`.
  *
- * Una carpeta en disco es del usuario: abrirla no puede fallar sólo porque el
- * formato avanzó. Esta migración ocurre en memoria; el archivo se reescribe con
- * la forma canónica en el primer guardado.
+ * Una carpeta en disco es del usuario: convertirla no puede fallar sólo porque
+ * el formato avanzó. Esta migración ocurre en memoria y se empaqueta en un
+ * `.deks` vecino; la fuente no se reescribe ni se elimina.
  */
 
 /** Claves que pertenecen a la identidad del elemento; el resto es checkpoint. */

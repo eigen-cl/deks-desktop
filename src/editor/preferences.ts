@@ -34,8 +34,8 @@ export function loadPreferences(): EditorPreferences {
 
 /**
  * Preferencias del editor: son del host y no del documento, así que viven en el
- * almacenamiento local y nunca dentro de la carpeta de la presentación. Una
- * carpeta DEKS tiene que poder copiarse a otro equipo sin arrastrar ajustes.
+ * almacenamiento local y nunca dentro del archivo de la presentación. Un
+ * `.deks` tiene que poder copiarse a otro equipo sin arrastrar ajustes del host.
  */
 export function useEditorPreferences() {
   const [preferences, setPreferences] = useState<EditorPreferences>(loadPreferences);

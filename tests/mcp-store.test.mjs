@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import test from "node:test";
+import { createDeksFile, readDeksFile } from "@deks-js/document";
 import { ProjectStore } from "../mcp/project-store.mjs";
 
 const document = {
@@ -30,17 +31,49 @@ const document = {
   }],
 };
 
-async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), "deks-mcp-"));
-  const project = join(root, "agent-demo");
-  await mkdir(join(project, "changes"), { recursive: true });
-  await mkdir(join(project, "assets"));
-  await writeFile(join(project, "document.deks.json"), JSON.stringify(document));
-  return { root, project, store: await ProjectStore.fromRoot(root) };
+const PNG_BYTES = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAEAQH/6WQzgAAAAABJRU5ErkJggg==", "base64");
+const OTHER_PNG_BYTES = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+
+const SVG_SOURCE = Buffer.from(`
+  <svg height="50px" width="100" xmlns="http://www.w3.org/2000/svg">
+    <title>Safe logo</title><path fill="#ff7043" d="M0 0 L100 50 Z"/>
+  </svg>
+`);
+const SVG_CANONICAL = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50"><title>Safe logo</title><path d="M0 0 L100 50 Z" fill="#ff7043"/></svg>');
+
+async function writeDeks(path, input = document, assets = []) {
+  const file = await createDeksFile(structuredClone(input), assets);
+  await writeFile(path, file.bytes);
 }
 
-test("a command batch is one revision and one observable agent receipt", async () => {
-  const { project, store } = await fixture();
+async function fixture({ withAsset = false } = {}) {
+  const root = await mkdtemp(join(tmpdir(), "deks-mcp-"));
+  const file = join(root, "agent-demo.deks");
+  const input = structuredClone(document);
+  const assets = [];
+  if (withAsset) {
+    input.assets.push({ id: "asset-existing", kind: "embedded", mediaType: "image/png", originalFilename: "existing.png" });
+    assets.push({ id: "asset-existing", mediaType: "image/png", bytes: PNG_BYTES });
+  }
+  await writeDeks(file, input, assets);
+  return { root, file, store: await ProjectStore.fromRoot(root) };
+}
+
+async function decoded(path) {
+  return readDeksFile(await readFile(path));
+}
+
+test("DEKS_PROJECTS_ROOT discovers valid direct .deks files", async () => {
+  const { root, store } = await fixture();
+  await writeFile(join(root, "notes.txt"), "not a presentation");
+  await writeFile(join(root, "broken.deks"), "not a zip");
+
+  assert.deepEqual(await store.listPresentations(), [{ id: document.id, name: document.name, revision: 0 }]);
+  assert.deepEqual(await store.getPresentation(document.id), document);
+});
+
+test("a command batch atomically replaces one .deks file and writes external hidden activity", async () => {
+  const { root, file, store } = await fixture();
   const result = await store.applyCommands({
     presentationId: document.id,
     expectedRevision: 0,
@@ -50,8 +83,33 @@ test("a command batch is one revision and one observable agent receipt", async (
 
   assert.equal(result.revision, 1);
   assert.equal(result.document.name, "Built by an agent");
-  const receipt = JSON.parse(await readFile(join(project, "changes", "1.json"), "utf8"));
-  assert.equal(receipt.origin, "agent");
+  assert.equal((await decoded(file)).document.name, "Built by an agent");
+  const stateDirectory = join(root, `.${basename(file)}.state`);
+  const receipt = JSON.parse(await readFile(join(stateDirectory, "1.json"), "utf8"));
+  assert.deepEqual(receipt, {
+    presentationId: document.id,
+    revision: 1,
+    origin: "agent",
+    changedSlideIds: [],
+    changedElementIds: [],
+  });
+  await assert.rejects(access(join(root, `.${basename(file)}.lock`)));
+  assert.equal((await readFile(file)).includes(Buffer.from(root)), false, "the portable archive must not contain a local path");
+});
+
+test("apply_commands preserves every embedded asset while rewriting the manifest", async () => {
+  const { file, store } = await fixture({ withAsset: true });
+  await store.applyCommands({
+    presentationId: document.id,
+    expectedRevision: 0,
+    idempotencyKey: "preserve-assets-1",
+    commands: [{ type: "update-document", patch: { name: "Assets survive" } }],
+  });
+  const reopened = await decoded(file);
+  assert.equal(reopened.document.name, "Assets survive");
+  assert.equal(reopened.assets.length, 1);
+  assert.equal(reopened.assets[0].id, "asset-existing");
+  assert.deepEqual(Buffer.from(reopened.assets[0].bytes), PNG_BYTES);
 });
 
 test("the same idempotency key never applies twice", async () => {
@@ -64,7 +122,6 @@ test("the same idempotency key never applies twice", async () => {
   };
   const first = await store.applyCommands(input);
   const replay = await store.applyCommands(input);
-
   assert.equal(first.revision, 1);
   assert.equal(replay.revision, 1);
 });
@@ -77,154 +134,208 @@ test("an idempotency key cannot hide a different command", async () => {
     idempotencyKey: "test-key-reuse",
     commands: [{ type: "update-document", patch: { name: "First" } }],
   });
-
-  await assert.rejects(
-    store.applyCommands({
-      presentationId: document.id,
-      expectedRevision: 1,
-      idempotencyKey: "test-key-reuse",
-      commands: [{ type: "update-document", patch: { name: "Different" } }],
-    }),
-    /idempotency_key_reused/,
-  );
+  await assert.rejects(store.applyCommands({
+    presentationId: document.id,
+    expectedRevision: 1,
+    idempotencyKey: "test-key-reuse",
+    commands: [{ type: "update-document", patch: { name: "Different" } }],
+  }), /idempotency_key_reused/);
 });
 
 test("a stale writer receives revision_conflict", async () => {
   const { store } = await fixture();
-  await assert.rejects(
-    store.applyCommands({
-      presentationId: document.id,
-      expectedRevision: 9,
-      idempotencyKey: "test-stale-writer",
-      commands: [{ type: "update-document", patch: { name: "Stale" } }],
-    }),
-    /revision_conflict/,
-  );
+  await assert.rejects(store.applyCommands({
+    presentationId: document.id,
+    expectedRevision: 9,
+    idempotencyKey: "test-stale-writer",
+    commands: [{ type: "update-document", patch: { name: "Stale" } }],
+  }), /revision_conflict/);
 });
 
-test("a failing command rolls back the complete batch", async () => {
-  const { project, store } = await fixture();
-  await assert.rejects(
-    store.applyCommands({
-      presentationId: document.id,
-      expectedRevision: 0,
-      idempotencyKey: "test-atomic-failure",
-      commands: [
-        { type: "update-document", patch: { name: "Must roll back" } },
-        { type: "unsupported-command" },
-      ],
-    }),
-  );
-  const unchanged = JSON.parse(await readFile(join(project, "document.deks.json"), "utf8"));
-  assert.equal(unchanged.revision, 0);
-  assert.equal(unchanged.name, document.name);
+test("a failing command leaves the complete .deks archive unchanged", async () => {
+  const { file, store } = await fixture();
+  const before = await readFile(file);
+  await assert.rejects(store.applyCommands({
+    presentationId: document.id,
+    expectedRevision: 0,
+    idempotencyKey: "test-atomic-failure",
+    commands: [
+      { type: "update-document", patch: { name: "Must roll back" } },
+      { type: "unsupported-command" },
+    ],
+  }));
+  assert.deepEqual(await readFile(file), before);
 });
 
-test("a symlink cannot expose a presentation outside the authorized root", async () => {
+test("a symlink cannot expose a .deks file outside the authorized root", async () => {
   const authorized = await mkdtemp(join(tmpdir(), "deks-authorized-"));
   const outside = await mkdtemp(join(tmpdir(), "deks-outside-"));
-  await writeFile(join(outside, "document.deks.json"), JSON.stringify(document));
-  await symlink(outside, join(authorized, "linked-project"), "dir");
+  const outsideFile = join(outside, "outside.deks");
+  await writeDeks(outsideFile);
+  await symlink(outsideFile, join(authorized, "linked.deks"), "file");
   const store = await ProjectStore.fromRoot(authorized);
-
   assert.deepEqual(await store.listPresentations(), []);
   await assert.rejects(store.getPresentation(document.id), /presentation_not_found/);
 });
 
-const PNG_BYTES = Buffer.concat([
-  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-  Buffer.from("payload for the fixture image"),
-]);
+test("a hidden state symlink cannot turn MCP receipts into an arbitrary file writer", async () => {
+  const { root, file, store } = await fixture();
+  const outside = await mkdtemp(join(tmpdir(), "deks-state-outside-"));
+  await symlink(outside, join(root, `.${basename(file)}.state`), "dir");
 
-test("add_asset writes the bytes before declaring the descriptor", async () => {
-  const { project, store } = await fixture();
+  await assert.rejects(store.applyCommands({
+    presentationId: document.id,
+    expectedRevision: 0,
+    idempotencyKey: "state-symlink-1",
+    commands: [{ type: "update-document", patch: { name: "Must not escape" } }],
+  }), /path_not_authorized/);
+  assert.deepEqual(await readdir(outside), []);
+  assert.equal((await decoded(file)).document.revision, 0);
+});
 
+test("add_asset embeds bytes inside the same .deks file before declaring the descriptor", async () => {
+  const { file, store } = await fixture();
   const result = await store.addAsset({
-    presentationId: "presentation-1",
+    presentationId: document.id,
     expectedRevision: 0,
     idempotencyKey: "asset-key-0001",
     base64: PNG_BYTES.toString("base64"),
     originalFilename: "logo.png",
   });
-
   assert.equal(result.revision, 1);
   assert.equal(result.asset.kind, "embedded");
   assert.equal(result.asset.mediaType, "image/png");
   assert.equal(result.asset.originalFilename, "logo.png");
-  const stored = await readFile(join(project, "assets", `${result.asset.id}.png`));
-  assert.deepEqual(stored, PNG_BYTES);
-  // El descriptor quedó en el documento, no sólo en la respuesta.
-  assert.deepEqual(result.document.assets, [result.asset]);
+  const reopened = await decoded(file);
+  assert.deepEqual(reopened.document.assets, [result.asset]);
+  assert.equal(reopened.assets[0].id, result.asset.id);
+  assert.deepEqual(Buffer.from(reopened.assets[0].bytes), PNG_BYTES);
 });
 
-test("add_asset types the bytes itself and refuses anything that is not a raster image", async () => {
-  const { project, store } = await fixture();
-
-  await assert.rejects(
-    store.addAsset({
-      presentationId: "presentation-1",
-      expectedRevision: 0,
-      idempotencyKey: "asset-key-0002",
-      base64: Buffer.from("<html>definitely not an image</html>").toString("base64"),
-    }),
-    /asset_media_type_unsupported/,
-  );
-
-  // Nada quedó en la carpeta: el rechazo ocurre antes de escribir.
-  const { readdir } = await import("node:fs/promises");
-  assert.deepEqual(await readdir(join(project, "assets")), []);
+test("add_asset types the bytes itself and refuses anything that is not a supported image", async () => {
+  const { file, store } = await fixture();
+  const before = await readFile(file);
+  await assert.rejects(store.addAsset({
+    presentationId: document.id,
+    expectedRevision: 0,
+    idempotencyKey: "asset-key-0002",
+    base64: Buffer.from("<html>definitely not an image</html>").toString("base64"),
+  }), /asset_media_type_unsupported/);
+  assert.deepEqual(await readFile(file), before);
 });
 
-test("add_asset withdraws orphan bytes when the document rejects the descriptor", async () => {
-  const { project, store } = await fixture();
-  const { readdir } = await import("node:fs/promises");
+test("add_asset sanitizes SVG before hashing and packages only canonical bytes", async () => {
+  const { file, store } = await fixture();
+  const result = await store.addAsset({
+    presentationId: document.id,
+    expectedRevision: 0,
+    idempotencyKey: "asset-svg-safe-1",
+    base64: SVG_SOURCE.toString("base64"),
+    originalFilename: "brand.svg",
+  });
 
-  await assert.rejects(
-    store.addAsset({
-      presentationId: "presentation-1",
-      // Una revisión que no es la actual: el documento no acepta el cambio.
-      expectedRevision: 7,
-      idempotencyKey: "asset-key-0003",
-      base64: PNG_BYTES.toString("base64"),
-    }),
-    /revision_conflict/,
-  );
-
-  assert.deepEqual(await readdir(join(project, "assets")), []);
+  assert.equal(result.asset.mediaType, "image/svg+xml");
+  const reopened = await decoded(file);
+  assert.deepEqual(Buffer.from(reopened.assets[0].bytes), SVG_CANONICAL);
+  assert.equal(reopened.document.assets[0].mediaType, "image/svg+xml");
 });
 
-test("add_asset replays one idempotency key instead of storing the bytes twice", async () => {
-  const { project, store } = await fixture();
-  const { readdir } = await import("node:fs/promises");
+test("unsafe SVG rejection is atomic and creates no receipt or activity side effects", async () => {
+  const { root, file, store } = await fixture();
+  const before = await readFile(file);
+  const unsafe = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><script>alert(1)</script></svg>');
+
+  await assert.rejects(store.addAsset({
+    presentationId: document.id,
+    expectedRevision: 0,
+    idempotencyKey: "asset-svg-bad-1",
+    base64: unsafe.toString("base64"),
+  }), /asset_unsafe/);
+
+  assert.deepEqual(await readFile(file), before);
+  await assert.rejects(access(join(root, `.${basename(file)}.state`)));
+  await assert.rejects(access(join(root, `.${basename(file)}.lock`)));
+});
+
+test("add_asset replays one idempotency key without duplicating bytes", async () => {
+  const { file, store } = await fixture();
   const request = {
-    presentationId: "presentation-1",
+    presentationId: document.id,
     expectedRevision: 0,
     idempotencyKey: "asset-key-0004",
     base64: PNG_BYTES.toString("base64"),
   };
-
   const first = await store.addAsset(request);
-  const second = await store.addAsset(request).catch((error) => error);
-
-  // El segundo intento no puede duplicar el asset ni saltar de revisión.
+  const second = await store.addAsset(request);
   assert.equal(first.revision, 1);
-  assert.ok(second instanceof Error || second.revision === 1);
-  const files = await readdir(join(project, "assets"));
-  assert.ok(files.length <= 2, `expected at most one stored asset, found ${files.join(", ")}`);
+  assert.deepEqual(second, first);
+  const reopened = await decoded(file);
+  assert.equal(reopened.document.assets.length, 1);
+  assert.equal(reopened.assets.length, 1);
+  await assert.rejects(store.addAsset({
+    ...request,
+    base64: OTHER_PNG_BYTES.toString("base64"),
+  }), /idempotency_key_reused/);
 });
 
-test("readAssets returns the stored bytes so visual QA can draw the image", async () => {
+test("readAssets returns packaged bytes so visual QA can draw the image", async () => {
   const { store } = await fixture();
   const added = await store.addAsset({
-    presentationId: "presentation-1",
+    presentationId: document.id,
     expectedRevision: 0,
     idempotencyKey: "asset-key-0005",
     base64: PNG_BYTES.toString("base64"),
   });
-
-  const assets = await store.readAssets("presentation-1");
+  const assets = await store.readAssets(document.id);
   assert.deepEqual(assets[added.asset.id], {
     mediaType: "image/png",
     base64: PNG_BYTES.toString("base64"),
   });
+});
+
+test("readAssets returns canonical SVG bytes to the preview boundary", async () => {
+  const { store } = await fixture();
+  const added = await store.addAsset({
+    presentationId: document.id,
+    expectedRevision: 0,
+    idempotencyKey: "asset-svg-preview-1",
+    base64: SVG_SOURCE.toString("base64"),
+  });
+  const assets = await store.readAssets(document.id);
+  assert.deepEqual(assets[added.asset.id], {
+    mediaType: "image/svg+xml",
+    base64: SVG_CANONICAL.toString("base64"),
+  });
+});
+
+test("legacy expanded folders remain readable and writable without being deleted", async () => {
+  const root = await mkdtemp(join(tmpdir(), "deks-mcp-legacy-"));
+  const project = join(root, "legacy-project");
+  await mkdir(join(project, "changes"), { recursive: true });
+  await mkdir(join(project, "assets"));
+  await writeFile(join(project, "document.deks.json"), JSON.stringify(document));
+  const store = await ProjectStore.fromRoot(root);
+  assert.equal((await store.getPresentation(document.id)).name, document.name);
+  await store.applyCommands({
+    presentationId: document.id,
+    expectedRevision: 0,
+    idempotencyKey: "legacy-folder-1",
+    commands: [{ type: "update-document", patch: { name: "Still compatible" } }],
+  });
+  assert.equal(JSON.parse(await readFile(join(project, "document.deks.json"), "utf8")).name, "Still compatible");
+  assert.ok((await readdir(root)).includes("legacy-project"));
+});
+
+test("a migrated .deks file takes precedence over its preserved legacy folder", async () => {
+  const root = await mkdtemp(join(tmpdir(), "deks-mcp-migrated-"));
+  const legacy = join(root, "same-deck");
+  await mkdir(legacy);
+  await writeFile(join(legacy, "document.deks.json"), JSON.stringify({ ...document, name: "Legacy copy" }));
+  await writeDeks(join(root, "same-deck.deks"), { ...document, name: "Portable copy", revision: 4 });
+
+  const store = await ProjectStore.fromRoot(root);
+
+  assert.deepEqual(await store.listPresentations(), [{ id: document.id, name: "Portable copy", revision: 4 }]);
+  assert.equal((await store.getPresentation(document.id)).name, "Portable copy");
+  assert.ok((await readdir(root)).includes("same-deck"), "migration never deletes the source folder");
 });

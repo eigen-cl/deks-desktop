@@ -1,8 +1,23 @@
-import { DeksPresentation, assertDeksDocument, type DeksDocument, type SlideBackground } from "@deks-js/document";
+import {
+  DeksPresentation,
+  assertDeksDocument,
+  type DeksDocument,
+  type DeksFileAsset,
+  type SlideBackground,
+} from "@deks-js/document";
 
 export interface OpenProject {
   path: string;
   document: DeksDocument;
+  assets: DeksFileAsset[];
+  fingerprint: string;
+}
+
+/** Archivo descubierto por Rust sin interpretar su ZIP. */
+export interface DeksFileEntry {
+  path: string;
+  root: string;
+  updatedAtMs: number;
 }
 
 /** Lo que el host resuelve una vez al arrancar, antes del primer render. */
@@ -16,7 +31,7 @@ export interface Workspace {
 /**
  * Resumen para el inicio. Sin `elements`: la tarjeta dibuja el fondo real de la
  * primera slide, que es lo que hace reconocible una presentación de un vistazo,
- * y cargar los elementos de cada carpeta sólo para eso sería caro y no se ve.
+ * y decodificar cada archivo completo sólo para eso sería caro y no se ve.
  */
 export interface ProjectSummary {
   path: string;
@@ -116,6 +131,11 @@ export interface ProjectChanged {
   origin: "user" | "agent" | "external";
   changedSlideIds: string[];
   changedElementIds: string[];
+}
+
+export interface DeksFileChanged {
+  path: string;
+  fingerprint: string;
 }
 
 /**

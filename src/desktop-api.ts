@@ -1,19 +1,75 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { DeksDocument } from "@deks-js/document";
+import {
+  createDeksFile,
+  DEKS_FILE_MEDIA_TYPE,
+  inspectAndNormalizeDeksImage,
+  normalizeDeksFileAssets,
+  readDeksFile,
+  type DeksDocument,
+  type DeksFileAsset,
+} from "@deks-js/document";
 import { toCanonicalDocument } from "./legacy-document";
 import type { ImportedAsset } from "./editor/elements";
 import type { Locale } from "./i18n";
-import type { DetectedAgent, ManagedInstall, OpenProject, ProjectChanged, ProjectSummary, Workspace } from "./model";
+import type {
+  DeksFileChanged,
+  DeksFileEntry,
+  DetectedAgent,
+  ManagedInstall,
+  OpenProject,
+  ProjectSummary,
+  Workspace,
+} from "./model";
+import {
+  assertDeksArchiveExpandedSize,
+  assertDeksArchivePhysicalSize,
+} from "../shared/deks-file-limits.mjs";
 
-/** Raíz por defecto, idioma guardado y carpetas fuente en una sola llamada. */
+interface HostDeksBytes {
+  path: string;
+  bytes: number[];
+  fingerprint: string;
+}
+
+interface LegacyProject {
+  path: string;
+  document: unknown;
+}
+
+export interface ImportedAssetBytes extends ImportedAsset {
+  bytes: Uint8Array;
+}
+
 export function readWorkspace(): Promise<Workspace> {
   return invoke<Workspace>("read_workspace");
 }
 
-export function listProjects(roots: string[]): Promise<ProjectSummary[]> {
-  return invoke<ProjectSummary[]>("list_projects", { roots });
+/** Rust descubre archivos; Core es quien interpreta su manifest. */
+export async function listProjects(roots: string[]): Promise<ProjectSummary[]> {
+  const entries = await invoke<DeksFileEntry[]>("list_deks_files", { roots });
+  const summaries = await Promise.all(entries.map(async (entry) => {
+    try {
+      const project = await openProject(entry.path);
+      return {
+        path: project.path,
+        root: entry.root,
+        name: project.document.name,
+        revision: project.document.revision,
+        slideCount: project.document.slides.length,
+        updatedAtMs: entry.updatedAtMs,
+        canvas: project.document.canvas,
+        background: project.document.slides[0]?.background ?? null,
+      } satisfies ProjectSummary;
+    } catch {
+      return undefined;
+    }
+  }));
+  return summaries.reduce<ProjectSummary[]>((valid, summary) => {
+    if (summary) valid.push(summary);
+    return valid;
+  }, []);
 }
 
 export function setLocale(locale: Locale): Promise<void> {
@@ -33,70 +89,125 @@ export async function chooseDirectory(title: string): Promise<string | undefined
   return typeof selected === "string" ? selected : undefined;
 }
 
-export function createProject(parentPath: string, name: string, document: DeksDocument): Promise<OpenProject> {
-  return invoke<OpenProject>("create_project", { parentPath, name, document }).then(canonical);
+export async function chooseDeksFile(title: string): Promise<string | undefined> {
+  const selected = await open({
+    directory: false,
+    multiple: false,
+    title,
+    filters: [{ name: "DEKS", extensions: ["deks"] }],
+  });
+  return typeof selected === "string" ? selected : undefined;
+}
+
+async function decodeHostFile(record: HostDeksBytes): Promise<OpenProject> {
+  assertDeksArchivePhysicalSize(record.bytes.length);
+  const archive = await readDeksFile(new Uint8Array(record.bytes));
+  assertDeksArchiveExpandedSize(archive.document, archive.assets);
+  return {
+    path: record.path,
+    document: archive.document,
+    // Core validates every packaged image and canonicalizes safe SVG bytes.
+    assets: normalizeDeksFileAssets(archive.document, archive.assets),
+    fingerprint: record.fingerprint,
+  };
+}
+
+export async function createProject(parentPath: string, name: string, document: DeksDocument): Promise<OpenProject> {
+  assertDeksArchiveExpandedSize(document, []);
+  const archive = await createDeksFile(document);
+  assertDeksArchivePhysicalSize(archive.bytes);
+  const written = await invoke<HostDeksBytes>("create_deks_file", {
+    parentPath,
+    filename: archive.filename,
+    bytes: Array.from(archive.bytes),
+  });
+  return decodeHostFile(written);
 }
 
 export function openProject(path: string): Promise<OpenProject> {
-  // Una carpeta escrita por una versión anterior sigue siendo del usuario: se
-  // migra al contrato canónico al abrirla, no se rechaza.
-  return invoke<OpenProject>("open_project", { path }).then(canonical);
+  return invoke<HostDeksBytes>("read_deks_file", { path }).then(decodeHostFile);
 }
 
-function canonical(project: OpenProject): OpenProject {
-  return { ...project, document: toCanonicalDocument(project.document) };
-}
-
-export function saveProject(
-  path: string,
+export async function saveProject(
+  project: Pick<OpenProject, "path" | "assets" | "fingerprint">,
   expectedRevision: number,
   document: DeksDocument,
-  changedSlideIds: string[],
-  changedElementIds: string[],
 ): Promise<OpenProject> {
-  return invoke<OpenProject>("save_project", {
-    path,
-    expectedRevision,
-    document,
-    changedSlideIds,
-    changedElementIds,
-  }).then(canonical);
+  if (document.revision !== expectedRevision + 1) throw new Error("next_revision_invalid");
+  const embedded = new Set(document.assets.filter(({ kind }) => kind === "embedded").map(({ id }) => id));
+  const assets = normalizeDeksFileAssets(document, project.assets.filter(({ id }) => embedded.has(id)));
+  assertDeksArchiveExpandedSize(document, assets);
+  const archive = await createDeksFile(document, assets);
+  assertDeksArchivePhysicalSize(archive.bytes);
+  const written = await invoke<HostDeksBytes>("write_deks_file", {
+    path: project.path,
+    expectedFingerprint: project.fingerprint,
+    bytes: Array.from(archive.bytes),
+  });
+  const reopened = await decodeHostFile(written);
+  if (reopened.document.revision !== document.revision) throw new Error("deks_write_verification_failed");
+  return reopened;
 }
 
 /**
- * Documento recortado a su portada. El inicio dibuja la primera slide con el
- * mismo renderer que el editor, pero sólo de las tarjetas que llegan a verse.
+ * Convierte una carpeta antigua a un archivo vecino. El ZIP se valida antes y
+ * después de escribir; la carpeta fuente queda intacta.
  */
+export async function migrateLegacyProject(path: string): Promise<OpenProject> {
+  const legacy = await invoke<LegacyProject>("open_project", { path });
+  const document = toCanonicalDocument(legacy.document);
+  const assets: DeksFileAsset[] = [];
+  for (const descriptor of document.assets) {
+    if (descriptor.kind !== "embedded") continue;
+    const bytes = await invoke<number[]>("read_asset", {
+      path: legacy.path,
+      assetId: descriptor.id,
+      mediaType: descriptor.mediaType,
+    });
+    const inspected = inspectAndNormalizeDeksImage(new Uint8Array(bytes), descriptor.mediaType);
+    assets.push({ id: descriptor.id, mediaType: inspected.mediaType, bytes: inspected.bytes, contentHash: "" });
+  }
+  assertDeksArchiveExpandedSize(document, assets);
+  const archive = await createDeksFile(document, assets);
+  assertDeksArchivePhysicalSize(archive.bytes);
+  await readDeksFile(archive.bytes);
+  const written = await invoke<HostDeksBytes>("migrate_legacy_folder", {
+    path: legacy.path,
+    bytes: Array.from(archive.bytes),
+  });
+  const reopened = await decodeHostFile(written);
+  if (JSON.stringify(reopened.document) !== JSON.stringify(document)) {
+    throw new Error("legacy_migration_verification_failed");
+  }
+  return reopened;
+}
+
 export function readProjectCover(path: string): Promise<DeksDocument> {
-  return invoke<DeksDocument>("read_project_cover", { path }).then(toCanonicalDocument);
+  return openProject(path).then(({ document }) => {
+    const first = document.slides[0];
+    const stateIds = new Set(first?.states.map(({ elementId }) => elementId) ?? []);
+    const assetIds = new Set(first?.states.flatMap((state) => "assetId" in state ? [state.assetId] : []) ?? []);
+    return {
+      ...document,
+      elements: document.elements.filter(({ id }) => stateIds.has(id)),
+      assets: document.assets.filter(({ id }) => assetIds.has(id)),
+      slides: first ? [first] : [],
+    };
+  });
 }
 
-/**
- * Manda la carpeta de la presentación a la papelera del sistema. No la
- * destruye: si el borrado fue un error, se recupera fuera de DEKS.
- */
 export function deleteProject(path: string): Promise<void> {
-  return invoke("delete_project", { path });
+  return invoke("delete_deks_file", { path });
 }
 
-/** Qué arneses hay instalados en este equipo. Sólo lee, y sólo los presentes. */
 export function detectAgents(): Promise<DetectedAgent[]> {
   return invoke<DetectedAgent[]>("detect_agents");
 }
 
-/**
- * Instala MCP y skills juntos en un arnés. Sin `folder` la instalación es
- * global; con `folder` queda dentro de esa carpeta y la autoriza a ella.
- */
-export function installAgent(
-  agentId: string,
-  projectsRoot: string,
-  folder?: string,
-): Promise<ManagedInstall[]> {
+export function installAgent(agentId: string, projectsRoot: string, folder?: string): Promise<ManagedInstall[]> {
   return invoke<ManagedInstall[]>("install_agent", { agentId, projectsRoot, folder: folder ?? null });
 }
 
-/** Deja de mantener una instalación. No borra nada: sólo deja de actualizarla. */
 export function forgetManagedInstall(
   agentId: string,
   scope: "global" | "folder",
@@ -105,26 +216,23 @@ export function forgetManagedInstall(
   return invoke<ManagedInstall[]>("forget_managed_install", { agentId, scope, folder });
 }
 
-/** Reinstala skills y configuración en todo lo que el host mantiene al día. */
 export function syncManagedInstalls(): Promise<ManagedInstall[]> {
   return invoke<ManagedInstall[]>("sync_managed_installs");
 }
 
 export function watchProject(path: string): Promise<void> {
-  return invoke("watch_project", { path });
+  return invoke("watch_deks_file", { path });
 }
 
-export function onProjectChanged(handler: (event: ProjectChanged) => void): Promise<UnlistenFn> {
-  return listen<ProjectChanged>("deks://presentation-changed", ({ payload }) => handler(payload));
+export function onProjectChanged(handler: (event: DeksFileChanged) => void): Promise<UnlistenFn> {
+  return listen<DeksFileChanged>("deks://file-changed", ({ payload }) => handler(payload));
 }
 
-/** Copia un archivo del sistema dentro de la carpeta del proyecto. */
-export function importAsset(path: string, sourcePath: string): Promise<ImportedAsset> {
-  return invoke<ImportedAsset>("import_asset", { path, sourcePath });
-}
-
-export function readAsset(path: string, assetId: string, mediaType: string): Promise<number[]> {
-  return invoke<number[]>("read_asset", { path, assetId, mediaType });
+export function importAsset(sourcePath: string): Promise<ImportedAssetBytes> {
+  return invoke<Omit<ImportedAssetBytes, "bytes"> & { bytes: number[] }>("read_image_file", { sourcePath }).then((asset) => {
+    const inspected = inspectAndNormalizeDeksImage(new Uint8Array(asset.bytes), asset.mediaType);
+    return { ...asset, mediaType: inspected.mediaType, bytes: inspected.bytes };
+  });
 }
 
 export async function chooseImage(title: string): Promise<string | undefined> {
@@ -132,7 +240,9 @@ export async function chooseImage(title: string): Promise<string | undefined> {
     title,
     multiple: false,
     directory: false,
-    filters: [{ name: "Imagen", extensions: ["png", "jpg", "jpeg", "gif", "webp"] }],
+    filters: [{ name: "Imagen", extensions: ["png", "jpg", "jpeg", "gif", "webp", "svg"] }],
   });
   return typeof selected === "string" ? selected : undefined;
 }
+
+export { DEKS_FILE_MEDIA_TYPE };

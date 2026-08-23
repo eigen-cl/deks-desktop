@@ -1,14 +1,14 @@
 ---
 name: deks-desktop-mcp
-description: "Operate the local DEKS Desktop MCP over a project folder on disk: how the app connects an agent from Settings → Agents, the five tools it exposes (list_presentations, get_presentation, render_slide_preview, add_asset, apply_commands), the DEKS Core command envelope with kebab-case `type` and camelCase payloads, embedding image bytes with add_asset, expected revisions and idempotency keys, the folder lock and path_not_authorized, local visual QA in isolated Chromium, and the explicit list of Cloud capabilities that do not exist here. Use it whenever the discovered tool set is those five, whenever apply_commands takes `type` instead of `command`, or whenever the deck is a folder on the user's disk. Pair with $deks-presentations for the document contract itself."
+description: "Operate the local DEKS Desktop MCP over portable `.deks` files on disk: how the app connects an agent from Settings → Agents, the five tools it exposes (list_presentations, get_presentation, render_slide_preview, add_asset, apply_commands), the DEKS Core command envelope with kebab-case `type` and camelCase payloads, embedding image bytes with add_asset, expected revisions and idempotency keys, the sibling file lock and path_not_authorized, local visual QA in isolated Chromium, and the explicit list of Cloud capabilities that do not exist here. Use it whenever the discovered tool set is those five, whenever apply_commands takes `type` instead of `command`, or whenever the deck is a local `.deks` file. Pair with $deks-presentations for the document contract itself."
 ---
 
 # Operate the DEKS Desktop MCP
 
 DEKS Desktop runs an MCP server on the user's machine over **one explicitly
 authorized root folder**. Presentations never leave the disk and there is no token
-and no account. A presentation is a folder holding `document.deks.json` plus an
-`assets/` directory.
+and no account. A presentation is one direct `.deks` file whose strict manifest and
+embedded assets are read and written by `@deks-js/document`.
 
 The document contract — what the fields mean and what values they take — lives in
 `$deks-presentations`. This skill is only about reaching it through this server.
@@ -35,7 +35,7 @@ performs in the app, not something to work around.
 | `list_presentations()` | Valid local presentations inside the authorized root. Read-only. |
 | `get_presentation(presentation_id)` | The canonical document and its current revision. Read-only. |
 | `render_slide_preview(presentation_id, slide_id, expected_revision?, width?)` | Renders one slide with DEKS Core in isolated Chromium. Returns a PNG plus DOM measurements and visual-QA issues. `width` is `1280` or `1600`, default `1600`. Read-only. |
-| `add_asset(presentation_id, expected_revision, idempotency_key, base64, original_filename?)` | Embeds raster bytes as an asset and declares it in the document. Returns the asset ID to reference from an image state. |
+| `add_asset(presentation_id, expected_revision, idempotency_key, base64, original_filename?)` | Admits image bytes, embeds their canonical form and declares the asset. Returns the asset ID to reference from an image state. |
 | `apply_commands(presentation_id, expected_revision, idempotency_key, commands)` | 1–100 DEKS Core commands applied as one local revision. |
 
 That is the whole surface. Everything that mutates the deck goes through
@@ -63,23 +63,37 @@ slide — which is exactly the document model, made explicit.
 
 ## Assets
 
-`add_asset` takes raw image bytes as base64. PNG, JPEG, GIF or WebP; **the media type
-is decided by the bytes, not by what you declare**. It both stores the file under
-`assets/` by content hash and declares the descriptor in the document, so you do not
-also send `define-asset`. Use the returned asset ID in an image state's `assetId`.
+`add_asset` takes raw image bytes as base64. It accepts PNG, JPEG, GIF or WebP up
+to 50 MB, or a static safe SVG up to 5 MB. Every image is at most 16,384 units on
+either side and its logical width × height is at most 40 megapixels. **The media
+type is decided by the bytes, not by what you declare.**
+
+Safe SVG means DEKS's parsed subset, not arbitrary markup: no scripts, events,
+CSS/style, fonts or `<text>`, `foreignObject`, nested `<image>`, `<use>`, SMIL,
+extra namespaces, declarations/entities/processing instructions, or remote/data
+references. The host emits canonical UTF-8 SVG before hashing and embedding it.
+
+`add_asset` packages the admitted bytes in the same `.deks` by content hash and
+declares the descriptor, so you do not also send `define-asset`. Use the returned
+asset ID in an image state's `assetId`. Never send uninspected bytes through
+`define-asset`; it only describes bytes that are already present.
 
 Keep the batch and the asset separate: `add_asset` consumes a revision of its own.
+The complete portable file is capped at 95 MB physical and 90 MB uncompressed;
+these are file-safety bounds, not a Cloud plan quota.
 
 ## Writing safely
 
 Each write takes `expected_revision` and an `idempotency_key` of 8–200 characters.
-The store takes a lock on the project folder and writes the document atomically, so
-a partially written file is not a state you have to handle. A batch is atomic: if any
+The store takes a transient sibling `.<name>.deks.lock` and replaces the archive
+atomically, so a partially written file is not a state you have to handle. Idempotency
+and activity receipts live in `.<name>.deks.state/`, never in the portable manifest.
+A batch is atomic: if any
 command is invalid, nothing is applied and the revision does not advance.
 
-`path_not_authorized` means the requested project resolves outside the root the user
-authorized. That is not a retryable error and not something to route around: ask the
-user to open or authorize that folder in the app.
+`path_not_authorized` means a discovered file or hidden state path resolves outside
+the root the user authorized. That is not retryable and not something to route around:
+ask the user to move the `.deks` into or authorize the intended root in the app.
 
 For a timeout or transport error, the result is uncertain. Re-read with
 `get_presentation` before touching the deck again — see `$deks-presentations` →
@@ -93,6 +107,11 @@ report says they are available and the measured IDs cover the slide's rendered
 element IDs. Render every checkpoint you touched at the freshly read revision, and
 look at the images — the report catches overflow, not hierarchy, contrast, or whether
 the motion means anything.
+
+The Desktop runtime pins the exact `@deks-js/render-preview@4.2.0` contract and
+renders both admitted raster images and canonical safe SVG from the embedded
+`.deks` assets. Do not replace an embedded image with a filesystem path or remote
+URL.
 
 ## What does not exist here
 

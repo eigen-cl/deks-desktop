@@ -40,7 +40,7 @@ function setup(document: DeksDocument = createPresentation("Deck", { width: 1600
       source={document}
       persistence={persistence}
       saveState="idle"
-      projectPath="/tmp/deck"
+      assets={[]}
       onImportAsset={async () => imported}
       onExit={() => undefined}
     />,
@@ -214,7 +214,7 @@ describe("editor de escritorio", () => {
         source={document}
         persistence={{ save: async () => { throw new Error("revision_conflict"); } }}
         saveState="idle"
-        projectPath="/tmp/deck"
+        assets={[]}
         onImportAsset={async () => undefined}
         onExit={() => undefined}
       />,
@@ -257,6 +257,32 @@ describe("assets e historial", () => {
     ]);
     expect(document.elements[0]).toMatchObject({ kind: "image", name: "logo.png" });
     expect(document.slides[0]!.states[0]).toMatchObject({ assetId: imported.id, fit: "contain" });
+  });
+
+  it("bloquea una segunda selección mientras la imagen se está importando", async () => {
+    const user = userEvent.setup();
+    let finish!: (value: { id: string; mediaType: string }) => void;
+    const onImportAsset = vi.fn(() => new Promise<{ id: string; mediaType: string }>((resolve) => { finish = resolve; }));
+    const source = createPresentation("Deck", { width: 1600, height: 900 }, "deck");
+    render(
+      <Editor
+        t={translator("es")}
+        source={source}
+        persistence={{ save: async (_revision, next) => next }}
+        saveState="idle"
+        assets={[]}
+        onImportAsset={onImportAsset}
+        onExit={() => undefined}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "Imagen" });
+
+    await user.dblClick(button);
+
+    expect(onImportAsset).toHaveBeenCalledTimes(1);
+    expect(button).toBeDisabled();
+    finish({ id: "asset-vector", mediaType: "image/svg+xml" });
+    await waitFor(() => expect(button).toBeEnabled());
   });
 
   it("deshace un comando a la vez, avanzando la revisión en vez de retrocederla", async () => {

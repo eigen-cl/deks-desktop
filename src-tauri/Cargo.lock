@@ -503,11 +503,12 @@ dependencies = [
 
 [[package]]
 name = "deks-desktop"
-version = "0.8.2"
+version = "0.9.0"
 dependencies = [
  "notify",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

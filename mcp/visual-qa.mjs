@@ -41,7 +41,7 @@ function prepareDocument(document, slideId, resolved = {}) {
       element_ids: [state.elementId],
       bounds: { x: state.x, y: state.y, width: state.width, height: state.height },
       asset_id: state.assetId ?? null,
-      message: "Desktop preview did not receive safe raster bytes for this image; it was omitted.",
+      message: "Desktop preview did not receive safe packaged bytes for this image; it was omitted.",
     });
     return [];
   });

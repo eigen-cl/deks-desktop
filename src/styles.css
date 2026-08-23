@@ -558,7 +558,7 @@ h1, h2, h3 {
 
 .home__heading h1 { font-size: var(--text-title); }
 .home__heading p { margin: var(--space-2) 0 0; color: var(--color-text-muted); }
-.home__heading-actions { display: flex; gap: var(--space-2); }
+.home__heading-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-2); }
 
 .home__roots {
   display: flex;

@@ -28,7 +28,7 @@ export const tauriUpdater: UpdaterPort = {
 /**
  * Busca una actualización sin interrumpir el trabajo. Fuera de Tauri —o sin red—
  * la app sigue siendo utilizable: la actualización es una comodidad, no un
- * requisito para abrir una carpeta local.
+ * requisito para abrir un archivo local.
  */
 export async function checkForUpdate(
   updater: UpdaterPort = tauriUpdater,

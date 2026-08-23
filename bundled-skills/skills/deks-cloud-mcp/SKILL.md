@@ -1,6 +1,6 @@
 ---
 name: deks-cloud-mcp
-description: "Operate the DEKS Cloud MCP server at api-deks.eigen.cl: OAuth or workspace PAT, the full tool map (presentations, slides, elements, motion, palettes, icon catalog, layout validation, rendered previews, publication, export, undo), the exact apply_commands envelope in snake_case, revisions and idempotency keys, workspace assets, the 50-checkpoint and 100-state quotas, and what each error code means. Use it whenever the discovered tools include validate_layout, recommend_palettes, publish_presentation or export_deck, or whenever the deck lives in a workspace rather than in a local folder. Pair with $deks-presentations for the document contract itself."
+description: "Operate the DEKS Cloud MCP server at api-deks.eigen.cl: OAuth or workspace PAT, the full tool map (presentations, slides, elements, motion, palettes, icon catalog, layout validation, rendered previews, publication, export, undo), the exact apply_commands envelope in snake_case, revisions and idempotency keys, workspace assets, the 50-checkpoint and 100-state quotas, and what each error code means. Use it whenever the discovered tools include validate_layout, recommend_palettes, publish_presentation or export_deck, or whenever the deck lives in a workspace rather than in a local `.deks` file. Pair with $deks-presentations for the document contract itself."
 ---
 
 # Operate the DEKS Cloud MCP
@@ -38,7 +38,8 @@ does not list it.
 1. `list_presentations` to resolve the deck, then `get_presentation` immediately
    before planning any mutation. Capture the revision.
 2. `list_assets` before asking for media. **The MCP does not upload assets** — ask
-   the user to upload them in the web app.
+   the user to upload them in the web app, where they pass the shared image
+   admission contract.
 3. Plan the change. Group coherent edits into one `apply_commands` batch of at most
    100 operations; a failed batch is atomic and leaves the revision untouched.
 4. Send the exact latest `expected_revision` and one semantic `idempotency_key` per
@@ -60,6 +61,13 @@ mutating, and an atomic batch that would cross it rolls back completely.
 These are internal complexity guardrails, not user-facing copy. Mention a bound only
 when it constrains planning or rejects a write. Never delete older checkpoints or
 elements to make room, and never split a narrative silently — ask the user.
+
+Cloud workspace asset count and storage quotas belong to the account plan and
+are separate from the shared per-image bounds and the portable file format. Read
+the current quota reported by the product instead of inferring it from a `.deks`
+file. The 20 MB MCP `export_deck` ceiling is a base64 response-transport guard;
+it does not reduce the 95 MB physical / 90 MB uncompressed `.deks` contract used
+by Web, Cloud import/export and Desktop.
 
 ## External and destructive changes
 

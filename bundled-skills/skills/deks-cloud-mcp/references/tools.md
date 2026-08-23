@@ -13,14 +13,14 @@ annotations before every release; do not rely on a hard-coded tool count.
 - `list_presentations()` — list workspace decks and canonical revisions.
 - `get_presentation(presentation_id)` — read the presentation, its ordered slides, element states, motion and current revision.
 - `get_slide_state(presentation_id, slide_id)` — read one checkpoint and its typed states.
-- `list_assets(limit?, cursor?)` — list workspace-scoped media newest first; `limit` defaults to `50` and accepts `1..100`, while `cursor` is an optional UUID copied verbatim from `next_cursor`. The result contains `items` and `next_cursor`; URLs are authenticated workspace paths and bytes are not embedded. Inspect this before asking the user to upload a file. The MCP does not upload assets.
+- `list_assets(limit?, cursor?)` — list workspace-scoped media newest first; `limit` defaults to `50` and accepts `1..100`, while `cursor` is an optional UUID copied verbatim from `next_cursor`. The result contains `items` and `next_cursor`; URLs are authenticated workspace paths and bytes are not embedded. Inspect this before asking the user to upload a file. The MCP does not upload assets: the user uploads through Web, which admits PNG/JPEG/GIF/WebP up to 50 MB or static safe SVG up to 5 MB, with 16,384 units per side and 40 megapixels of logical width × height. It canonicalizes SVG before hashing and storage. Cloud's decoder and preview add host-specific animated-raster guards of 200 frames and 100 megapixels in aggregate; those are not portable Web/Desktop format limits.
 - `get_layout_snapshot(presentation_id, slide_id)` — read absolute rectangles and deterministic geometry estimates. Treat estimated text bounds as conservative pre-render signals, never as browser measurements.
 - `render_slide_preview(presentation_id, slide_id, expected_revision, width?)` — render one private checkpoint as a PNG (`width` is `1280` or `1600`) and return `layout_measurements_available`, renderer-derived `layout_measurements`, and `overflow_element_ids`. Always pass the freshly read revision. Use DOM measurements only when the availability flag is exactly `true` and their unique element ID set equals the freshly read slide's rendered element ID set. Missing, duplicate, or unexpected measurement IDs make coverage incomplete. Only complete coverage plus an empty overflow list supports a no-overflow conclusion. A false or absent flag is an image preview without DOM diagnostics, even if `layout_measurements` or `overflow_element_ids` is empty. Map reported overflow IDs back to semantic element names, correct them, re-read, and re-render until a compatible result confirms exact coverage and no overflow. The image is sent to the MCP client/model and is the basis for rendered QA, not a data-isolation mechanism.
 - `validate_layout(presentation_id)` — return geometry-only errors and AABB collision/outside-canvas warnings based on authored bounds and estimates. It is not DOM measurement or rendered visual QA and currently has no semantic understanding of containment or z-order intent.
 - `list_icon_catalog(family?, query?)` — discover trusted offline vector icons by semantic tags. `lucide` is the first family; results contain local path geometry, never remote URLs.
 - `recommend_palettes(intent, mode?, limit?)` — recommend complete semantic palettes with measured contrast ratios. Apply role colors and their paired `on_colors` together rather than cherry-picking swatches.
 - `complete_palette(intent?, mode?, background?, primary?, secondary?, reserve_semantic_colors?)` — preserve a valid supplied subset of `background`, `primary`, and `secondary`, then deterministically complete `primary`, `secondary`, `accent`, `background`, `text`, and `subtext` from the nearest catalog palette. The result includes `on_colors`, measured `contrast_checks`, `provided_roles`, `source_palette_id`, semantic `success`, `failure`, and `warning` colors, plus guidance. It infers mode from the background or defaults to dark. Its default reserves semantic colors; set `reserve_semantic_colors: false` only for a deliberate system that keeps status understandable another way. If fixed anchors cannot meet the contrast contract, the tool fails instead of silently changing them.
-- `export_deck(presentation_id)` — return a portable `.deks` ZIP archive as base64. The server normally caps the final archive and total assets at 20 MB; never paste the base64 into chat.
+- `export_deck(presentation_id)` — return a portable `.deks` ZIP archive as base64. This MCP response path caps the returned archive at 20 MB; that is a transport guard, not the portable format's 95 MB physical / 90 MB uncompressed bound. A larger valid deck remains exportable through the Web/Cloud file flow. Never paste base64 into chat.
 
 ## Presentation palette tool
 
@@ -51,7 +51,11 @@ A presentation contains at most 50 checkpoints. This is an internal complexity g
 - `rename_element(...)` — rename an identity across every slide.
 - `delete_element(...)` — delete the identity and every checkpoint state.
 
-Images require an existing `asset_id`. Shapes require `shape_kind`: `rectangle`, `ellipse`, or `line`. `shape_fill` accepts either:
+Images require an existing admitted `asset_id`; declaring an element never
+uploads or validates bytes. A safe SVG asset is static canonical UTF-8 from the
+Web upload path: scripts/events, CSS/fonts/`<text>`, `foreignObject`, nested
+`<image>`, `<use>`, SMIL and remote/data references are forbidden. Shapes require
+`shape_kind`: `rectangle`, `ellipse`, or `line`. `shape_fill` accepts either:
 
 ```json
 {"kind":"solid","color":"#FF7043"}

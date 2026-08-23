@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { applyDeksCommands, type DeksDocument } from "@deks-js/document";
-import { ArrowUpCircle, Bot, Download, X } from "lucide-react";
+import { ArrowUpCircle, Download, X } from "lucide-react";
 import {
   addSourceFolder,
+  chooseDeksFile,
   chooseDirectory,
   chooseImage,
   createProject,
@@ -12,6 +13,7 @@ import {
   importAsset,
   installAgent,
   listProjects,
+  migrateLegacyProject,
   onProjectChanged,
   openProject,
   readWorkspace,
@@ -28,12 +30,21 @@ import {
   type ManagedInstall,
   type OpenProject,
   type PaletteKey,
-  type ProjectChanged,
   type ProjectSummary,
 } from "./model";
 import { DEFAULT_LOCALE, resolveLocale, translator, type Locale, type TranslationKey } from "./i18n";
 import { checkForUpdate, installUpdate, type UpdateState } from "./updates";
 import type { Update } from "@tauri-apps/plugin-updater";
+
+function imageErrorKey(error: unknown, fallback: TranslationKey): TranslationKey {
+  const code = String(error);
+  if (code.includes("asset_empty")) return "error.assetEmpty";
+  if (code.includes("asset_too_large")) return "error.assetTooLarge";
+  if (code.includes("asset_media_type_unsupported")) return "error.assetType";
+  if (code.includes("asset_unsafe")) return "error.assetUnsafe";
+  if (code.includes("asset_too_complex")) return "error.assetComplex";
+  return fallback;
+}
 
 export function App() {
   const [project, setProject] = useState<OpenProject>();
@@ -47,12 +58,14 @@ export function App() {
   // implementación del host, no algo sobre lo que se pueda actuar.
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const savedTimer = useRef<number>();
-  const [activity, setActivity] = useState<ProjectChanged>();
   const [errorKey, setErrorKey] = useState<TranslationKey>();
   const [choosingFolder, setChoosingFolder] = useState(false);
   const [update, setUpdate] = useState<UpdateState>({ status: "idle" });
   const pendingUpdate = useRef<Update>();
   const currentRef = useRef<OpenProject>();
+  const assetRef = useRef<OpenProject["assets"]>([]);
+  const writingRef = useRef(false);
+  const ignoredFingerprint = useRef<string>();
   currentRef.current = project;
 
   // Los textos se guardan como clave, no como frase ya traducida: cambiar de
@@ -78,7 +91,7 @@ export function App() {
         setLocale(resolveLocale(workspace.locale, navigator.languages ?? [navigator.language]));
         await refreshProjects([workspace.defaultRoot, ...workspace.sourceFolders]);
       } catch {
-        // Sin workspace el inicio sigue en pie: se puede abrir una carpeta a mano.
+        // Sin workspace el inicio sigue en pie: se puede abrir un `.deks` a mano.
         setLocale(resolveLocale(undefined, navigator.languages ?? [navigator.language]));
       }
     })();
@@ -87,14 +100,15 @@ export function App() {
   useEffect(() => {
     const unlisten = onProjectChanged(async (event) => {
       const current = currentRef.current;
-      if (!current || current.path !== event.path || event.revision <= current.document.revision) return;
+      if (writingRef.current || ignoredFingerprint.current === event.fingerprint) return;
+      if (!current || current.path !== event.path || event.fingerprint === current.fingerprint) return;
       try {
         const refreshed = await openProject(current.path);
+        assetRef.current = refreshed.assets;
         setProject(refreshed);
-        setActivity(event);
         setErrorKey(undefined);
-      } catch {
-        setErrorKey("error.externalChange");
+      } catch (caught) {
+        setErrorKey(imageErrorKey(caught, "error.externalChange"));
       }
     });
     return () => { void unlisten.then((stop) => stop()).catch(() => undefined); };
@@ -132,17 +146,36 @@ export function App() {
     try {
       const loaded = await openProject(path);
       await watchProject(loaded.path);
+      assetRef.current = loaded.assets;
       setProject(loaded);
-    } catch {
-      setErrorKey("error.open");
+    } catch (caught) {
+      setErrorKey(imageErrorKey(caught, "error.open"));
     } finally {
       setChoosingFolder(false);
     }
   };
 
   const openExisting = async () => {
-    const path = await chooseDirectory(t("home.openFolder"));
+    const path = await chooseDeksFile(t("home.openFile"));
     if (path) await open(path);
+  };
+
+  const migrateExisting = async () => {
+    setChoosingFolder(true);
+    setErrorKey(undefined);
+    try {
+      const path = await chooseDirectory(t("home.migrateFolder"));
+      if (!path) return;
+      const migrated = await migrateLegacyProject(path);
+      await watchProject(migrated.path);
+      assetRef.current = migrated.assets;
+      setProject(migrated);
+      await refreshProjects([defaultRoot, ...sourceFolders]);
+    } catch (caught) {
+      setErrorKey(imageErrorKey(caught, "error.migrate"));
+    } finally {
+      setChoosingFolder(false);
+    }
   };
 
   /**
@@ -163,6 +196,7 @@ export function App() {
         createPresentation(name, canvas, crypto.randomUUID(), palette),
       );
       await watchProject(created.path);
+      assetRef.current = created.assets;
       setProject(created);
       void refreshProjects([defaultRoot, ...sourceFolders]);
     } catch {
@@ -198,9 +232,9 @@ export function App() {
   };
 
   /**
-   * Eliminar manda la carpeta a la papelera del sistema. La lista se refresca
+   * Eliminar manda el archivo a la papelera del sistema. La lista se refresca
    * después de que el disco confirmó, no antes: una tarjeta que desapareciera
-   * mientras el borrado falla mentiría sobre lo que hay en la carpeta.
+   * mientras el borrado falla mentiría sobre lo que hay en el disco.
    */
   const removeProject = async (path: string) => {
     setErrorKey(undefined);
@@ -223,7 +257,7 @@ export function App() {
     try {
       const current = await openProject(path);
       const next = applyDeksCommands(current.document, [{ type: "update-document", patch: { name } }]);
-      await saveProject(path, current.document.revision, next.document, [], []);
+      await saveProject(current, current.document.revision, next.document);
       await refreshProjects([defaultRoot, ...sourceFolders]);
     } catch {
       setErrorKey("error.rename");
@@ -292,7 +326,8 @@ export function App() {
           }}
           onCreate={(name, canvas, palette) => void createNew(name, canvas, palette)}
           onOpenProject={(path) => void open(path)}
-          onOpenFolder={() => void openExisting()}
+          onOpenFile={() => void openExisting()}
+          onMigrateFolder={() => void migrateExisting()}
           onAddSourceFolder={() => void addSource()}
           onRemoveSourceFolder={(path) => void removeSource(path)}
           onDeleteProject={(path) => void removeProject(path)}
@@ -310,14 +345,21 @@ export function App() {
     save: async (
       previousRevision: number,
       next: DeksDocument,
-      changedSlideIds: string[],
-      changedElementIds: string[],
+      _changedSlideIds: string[],
+      _changedElementIds: string[],
     ) => {
       window.clearTimeout(savedTimer.current);
       setSaveState("saving");
       setErrorKey(undefined);
       try {
-        const saved = await saveProject(project.path, previousRevision, next, changedSlideIds, changedElementIds);
+        writingRef.current = true;
+        const saved = await saveProject(
+          { path: project.path, fingerprint: project.fingerprint, assets: assetRef.current },
+          previousRevision,
+          next,
+        );
+        assetRef.current = saved.assets;
+        ignoredFingerprint.current = saved.fingerprint;
         setProject(saved);
         // «Guardado» se desvanece solo: es la confirmación de un instante, no
         // un estado permanente que valga un rincón de la barra para siempre.
@@ -329,6 +371,8 @@ export function App() {
         setSaveState(conflict ? "conflict" : "failed");
         setErrorKey(conflict ? "error.conflict" : "error.write");
         throw caught;
+      } finally {
+        writingRef.current = false;
       }
     },
   };
@@ -336,33 +380,31 @@ export function App() {
   return (
     <main className="workspace">
       {updateBanner}
-      {activity?.origin === "agent" && (
-        <aside className="agent-activity" role="status">
-          <Bot aria-hidden="true" />
-          <span>{t("agent.edited", { revision: activity.revision })}</span>
-          <button type="button" aria-label={t("agent.dismiss")} onClick={() => setActivity(undefined)}><X aria-hidden="true" /></button>
-        </aside>
-      )}
       {error && <aside className="workspace-error" role="alert">{error}</aside>}
       <Editor
         t={t}
         source={project.document}
         persistence={persistence}
         saveState={saveState}
-        projectPath={project.path}
+        assets={project.assets}
         onImportAsset={async () => {
           try {
             const source = await chooseImage(t("editor.addImage"));
             if (!source) return undefined;
-            return await importAsset(project.path, source);
-          } catch {
-            setErrorKey("error.asset");
+            const imported = await importAsset(source);
+            assetRef.current = [
+              ...assetRef.current.filter(({ id }) => id !== imported.id),
+              { id: imported.id, mediaType: imported.mediaType, bytes: imported.bytes, contentHash: "" },
+            ];
+            return imported;
+          } catch (caught) {
+            setErrorKey(imageErrorKey(caught, "error.asset"));
             return undefined;
           }
         }}
         onExit={() => {
           setProject(undefined);
-          setActivity(undefined);
+          assetRef.current = [];
           setSaveState("idle");
           void refreshProjects([defaultRoot, ...sourceFolders]);
         }}

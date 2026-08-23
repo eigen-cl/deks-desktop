@@ -30,6 +30,7 @@ test("the package contract enables native bundles and embeds only the five revie
     "../bundled-mcp/": "bundled-mcp/",
     "../bundled-skills/": "bundled-skills/",
     "../mcp/": "bundled-mcp/mcp/",
+    "../shared/": "bundled-mcp/shared/",
   });
 
   const report = await verifyBundledSkills(root);
@@ -41,7 +42,7 @@ test("the package contract enables native bundles and embeds only the five revie
     "design-deks-presentations",
   ]);
   assert.equal(report.source.repository, "https://github.com/eigen-cl/deks-plugin");
-  assert.equal(report.source.version, "0.2.0");
+  assert.equal(report.source.version, "0.3.0");
   for (const relativePath of report.files) {
     assert.equal((await lstat(join(new URL("bundled-skills/", root).pathname, relativePath))).isSymbolicLink(), false);
   }
@@ -55,29 +56,34 @@ test("the installed MCP payload is self-contained apart from documented Node and
   assert.deepEqual(
     Object.fromEntries(Object.entries(desktopPackageJson.dependencies).filter(([name]) => name.startsWith("@deks-js/"))),
     {
-      "@deks-js/document": "4.1.0",
-      "@deks-js/render-preview": "4.1.0",
-      "@deks-js/renderer-core": "4.1.0",
+      "@deks-js/document": "4.2.0",
+      "@deks-js/render-preview": "4.2.0",
+      "@deks-js/renderer-core": "4.2.0",
     },
   );
+  assert.equal(packageJson.version, "0.3.0");
+  assert.equal(packageLock.version, packageJson.version);
+  assert.equal(packageLock.packages[""]?.version, packageJson.version);
   assert.deepEqual(packageJson.engines, { node: ">=22" });
   assert.equal(packageJson.scripts.start, "node mcp/server.mjs");
   assert.equal(packageJson.scripts["install-browser"], "playwright install chromium");
   assert.deepEqual(packageJson.dependencies, {
-    "@deks-js/document": "4.1.0",
-    "@deks-js/render-preview": "4.1.0",
+    "@deks-js/document": "4.2.0",
+    "@deks-js/render-preview": "4.2.0",
     "playwright": "1.62.1",
   });
   for (const lock of [desktopPackageLock, packageLock]) {
     assert.doesNotMatch(JSON.stringify(lock), /file:|\.\.\/deks-core|artifacts\//);
-    assert.equal(lock.packages["node_modules/@deks-js/document"]?.version, "4.1.0");
-    assert.equal(lock.packages["node_modules/@deks-js/render-preview"]?.version, "4.1.0");
-    assert.equal(lock.packages["node_modules/@deks-js/renderer-core"]?.version, "4.1.0");
+    assert.equal(lock.packages["node_modules/@deks-js/document"]?.version, "4.2.0");
+    assert.equal(lock.packages["node_modules/@deks-js/render-preview"]?.version, "4.2.0");
+    assert.equal(lock.packages["node_modules/@deks-js/renderer-core"]?.version, "4.2.0");
   }
   const readme = await readFile(new URL("bundled-mcp/README.md", root), "utf8");
+  const server = await readFile(new URL("mcp/server.mjs", root), "utf8");
   assert.match(readme, /Node\.js 22/);
   assert.match(readme, /npm ci --omit=dev/);
   assert.match(readme, /npm run install-browser/);
+  assert.match(server, /serverInfo: \{ name: "deks-local", version: "0\.3\.0" \}/);
 });
 
 test("release workflow builds all desktop platforms, notarizes macOS and publishes checksums", async () => {

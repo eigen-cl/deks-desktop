@@ -18,6 +18,17 @@ rules turns a class of failed writes into edits you never send.
 - Every `states[].elementId` must reference a declared element.
 - Every image state's `assetId` must reference a declared asset. An asset still referenced by
   any state cannot be removed.
+- An admitted image must be PNG, JPEG, GIF or WebP up to 50 MB, or canonical
+  static SVG up to 5 MB. Its real bytes, dimensions and content hash must match
+  the descriptor; neither a filename nor a declared media type is evidence.
+- Every image is at most 16,384 units on either side and its logical width ×
+  height is at most 40 megapixels.
+- SVG rejects scripts, event handlers, CSS/style, fonts, `<text>`,
+  `foreignObject`, nested `<image>`, `<use>`, SMIL animation, declarations,
+  entities, processing instructions, extra namespaces, and remote/data
+  references. Only `<title>` and `<desc>` may contain inert text. SVG complexity
+  is bounded to 10,000 nodes, depth 64, 100,000 attributes and 2,000,000
+  path-data characters.
 - `parentId` must reference a declared `group`, and the parent chain must not contain a cycle.
 - An element with children cannot be deleted.
 - A presentation always has at least one slide; the last remaining slide cannot be deleted.
@@ -70,6 +81,11 @@ Portable document bounds, enforced by every host:
 
 Portable capacity bounds: at most 200 slides, 500 states per slide, 100 000 elements, 10 000
 assets, 100 000 characters of `content`, and 5 MB of document JSON.
+
+A portable `.deks` embeds all declared assets and is limited to 95 MB as a
+physical archive and 90 MB total after decompression. Import rejects missing,
+extra, duplicated or non-canonical asset entries as well as hash, byte-size or
+media-type mismatches.
 
 **A host may enforce tighter bounds than the portable format.** DEKS Cloud does — see
 `$deks-cloud-mcp` for its own slide, state, element, asset, text and byte limits and the

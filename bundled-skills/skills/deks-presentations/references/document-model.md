@@ -21,6 +21,36 @@ the same fields in snake_case; the Desktop MCP takes them exactly as written her
 There is no transitions array. A boundary is simply two adjacent slides, and each
 element's role at that boundary follows from which of the two it has a state on.
 
+### Image assets
+
+Web, Cloud and Desktop admit the same image profile. Raster assets may be PNG,
+JPEG, GIF or WebP and contain at most 50,000,000 bytes. SVG assets contain at most
+5,000,000 bytes and must belong to DEKS's static safe subset. Every image is at
+most 16,384 units on either side and its logical width × height is at most
+40,000,000 pixels.
+
+SVG admission parses and emits canonical UTF-8 XML. It permits geometry, groups,
+gradients and clipping, but rejects executable or ambient content: scripts, event
+attributes, CSS/style, fonts and `<text>`, `foreignObject`, nested `<image>`,
+`<use>`, SMIL animation, declarations/entities/processing instructions, extra
+namespaces, and remote or data references. `<title>` and `<desc>` remain available
+as inert metadata. The safe subset is bounded to 10,000 nodes, depth 64, 100,000
+attributes and 2,000,000 path-data characters. Never treat arbitrary SVG markup
+as an already-safe asset.
+
+Bytes enter a host only through its asset admission path: `add_asset` on Desktop,
+or the Web/Cloud upload flow. That path inspects the real bytes, canonicalizes SVG,
+computes the content hash and declares the descriptor. `define-asset` is not an
+upload bypass; use it only when those exact admitted bytes already exist in the
+host.
+
+A portable `.deks` is a ZIP package with a strict manifest and every declared
+asset embedded by content hash. Host locks, paths, URLs, idempotency receipts and
+workspace bookkeeping never enter the package. Import rechecks media bytes,
+dimensions, hashes and canonical SVG rather than trusting an extension or declared
+media type. Web PPTX export keeps admitted SVG as vector artwork and includes a
+PNG compatibility fallback for PowerPoint consumers that cannot render SVG.
+
 ## Slide
 
 `id`, `name`, `isTemplate`, `background`, an optional `motion` patch, and `states`.
@@ -104,4 +134,6 @@ z-index ±100 000 · `motionBeatMs` 50 to 60 000 · `durationBeats` 0 to 8 ·
 bezier x within 0..1, y within ±100.
 
 A host may enforce tighter product quotas on top of these; those live in the host's
-own skill.
+own skill. The portable package itself is limited to 95,000,000 physical bytes and
+90,000,000 total uncompressed bytes. Those are interoperability/security bounds,
+not Cloud storage-plan quotas or an MCP response limit.

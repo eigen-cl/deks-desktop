@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -19,7 +19,7 @@ import {
   Type,
   Undo2,
 } from "lucide-react";
-import type { DeksCommand, DeksDocument, MotionRole, MotionRolePatch } from "@deks-js/document";
+import type { DeksCommand, DeksDocument, DeksFileAsset, MotionRole, MotionRolePatch } from "@deks-js/document";
 import { Canvas } from "./Canvas";
 import { EditorSettings } from "./EditorSettings";
 import { Inspector, type InspectorTab } from "./Inspector";
@@ -55,8 +55,8 @@ export interface EditorProps {
   source: DeksDocument;
   persistence: EditorPersistence;
   saveState: SaveState;
-  /** Carpeta del proyecto: de ahí salen y ahí entran los assets. */
-  projectPath: string;
+  /** Bytes que llegaron dentro del mismo archivo `.deks`. */
+  assets: readonly DeksFileAsset[];
   onImportAsset(): Promise<{ id: string; mediaType: string; originalFilename?: string } | undefined>;
   onExit(): void;
 }
@@ -74,9 +74,9 @@ type MenuState =
   | { kind: "element"; elementId: string; point: { x: number; y: number } }
   | { kind: "slide"; slideId: string; point: { x: number; y: number } };
 
-export function Editor({ t, source, persistence, saveState, projectPath, onImportAsset, onExit }: EditorProps) {
+export function Editor({ t, source, persistence, saveState, assets, onImportAsset, onExit }: EditorProps) {
   const { document: deck, dispatch, pending, conflict, undo, redo, canUndo, canRedo } = useEditorDocument(source, persistence);
-  const assetUrls = useAssetUrls(deck, projectPath);
+  const assetUrls = useAssetUrls(deck, assets);
   const [preferences, setPreference] = useEditorPreferences();
   const [activeSlideId, setActiveSlideId] = useState(deck.slides[0]?.id ?? "");
   const [selectedId, setSelectedId] = useState<string>();
@@ -84,6 +84,8 @@ export function Editor({ t, source, persistence, saveState, projectPath, onImpor
   const [menu, setMenu] = useState<MenuState>();
   const [settings, setSettings] = useState(false);
   const [presenting, setPresenting] = useState(false);
+  const [importingAsset, setImportingAsset] = useState(false);
+  const importingAssetRef = useRef(false);
   const navigateToSlide = useCallback((slideId: string) => {
     setActiveSlideId(slideId);
     setSelectedId(undefined);
@@ -169,20 +171,27 @@ export function Editor({ t, source, persistence, saveState, projectPath, onImpor
   };
 
   /**
-   * La imagen se copia primero a la carpeta del proyecto y sólo entonces entra
-   * al documento: un descriptor que apuntara a bytes ausentes dejaría la
-   * presentación rota para cualquiera que la abriera después.
+   * La imagen se lee primero y sólo entra al documento cuando sus bytes pueden
+   * empaquetarse en el mismo `.deks`: nunca existe un descriptor sin contenido.
    */
   const insertImage = async () => {
-    const asset = await onImportAsset();
-    if (!asset) return;
-    const { element, state } = createImageElement(deck, slide.id, asset);
-    const ok = await dispatch([
-      { type: "define-asset", asset: { id: asset.id, kind: "embedded", mediaType: asset.mediaType, ...(asset.originalFilename ? { originalFilename: asset.originalFilename } : {}) } },
-      { type: "define-element", element },
-      { type: "add-element-state", slideId: slide.id, state },
-    ]);
-    if (ok) select(element.id);
+    if (importingAssetRef.current) return;
+    importingAssetRef.current = true;
+    setImportingAsset(true);
+    try {
+      const asset = await onImportAsset();
+      if (!asset) return;
+      const { element, state } = createImageElement(deck, slide.id, asset);
+      const ok = await dispatch([
+        { type: "define-asset", asset: { id: asset.id, kind: "embedded", mediaType: asset.mediaType, ...(asset.originalFilename ? { originalFilename: asset.originalFilename } : {}) } },
+        { type: "define-element", element },
+        { type: "add-element-state", slideId: slide.id, state },
+      ]);
+      if (ok) select(element.id);
+    } finally {
+      importingAssetRef.current = false;
+      setImportingAsset(false);
+    }
   };
 
   const duplicateActiveSlide = (slideId = slide.id) => {
@@ -292,8 +301,9 @@ export function Editor({ t, source, persistence, saveState, projectPath, onImpor
               <Icon aria-hidden="true" /> <span>{t(labelKey)}</span>
             </button>
           ))}
-          <button type="button" disabled={pending} onClick={() => void insertImage()}>
-            <Image aria-hidden="true" /> <span>{t("editor.addImage")}</span>
+          <button type="button" disabled={pending || importingAsset} onClick={() => void insertImage()}>
+            {importingAsset ? <Loader className="spin" aria-hidden="true" /> : <Image aria-hidden="true" />}
+            <span>{t(importingAsset ? "editor.importingImage" : "editor.addImage")}</span>
           </button>
         </nav>
         <div className="editor__history">

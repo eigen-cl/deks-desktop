@@ -37,8 +37,13 @@ Treat this mapping as adaptable guidance, not a universal cultural rule. Confirm
 - Query `list_icon_catalog` by meaning. Use one icon family unless a deliberate change conveys a new visual language.
 - Prefer native DEKS shapes and catalog-backed icons for vector artwork that must scale or animate
   without losing quality.
-- Use SVG only when it is a trusted or sanitized asset and the active editor, preview and export
-  pipeline all support it. DEKS Cloud does not currently accept arbitrary SVG uploads; never fetch,
-  paste or recommend an untrusted SVG as a workaround.
+- SVG is supported through the Web upload and Desktop `add_asset` paths up to 5
+  MB. Admission parses it into DEKS's canonical static subset: no scripts/events,
+  CSS, fonts or `<text>`, `foreignObject`, nested `<image>`, `<use>`, SMIL, extra
+  namespaces, declarations/entities/processing instructions, or remote/data
+  references. Do not fetch or paste arbitrary SVG as a workaround; submit the
+  source through the real admission path and use only the returned asset.
+- PNG, JPEG, GIF and WebP are supported up to 50 MB. Every image is limited to
+  16,384 units per side and 40 megapixels of logical width × height.
 - Keep photographs and other inherently raster media in a suitable raster format instead of
   converting them mechanically to SVG.

@@ -1,6 +1,6 @@
 interface:
   display_name: "DEKS Desktop MCP"
-  short_description: "Edit local DEKS projects over the desktop MCP"
+  short_description: "Edit local .deks files over the desktop MCP"
   default_prompt: "Use $deks-desktop-mcp to inspect and safely edit a DEKS presentation stored on this machine."
 dependencies:
   tools:

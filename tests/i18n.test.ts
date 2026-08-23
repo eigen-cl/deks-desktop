@@ -30,6 +30,16 @@ describe("translator", () => {
     expect(translator("en")("action.exit")).toBe("Close");
   });
 
+  it("explica por separado los límites y rechazos seguros de imágenes", () => {
+    const es = translator("es");
+    const en = translator("en");
+    expect(es("error.assetTooLarge")).toMatch(/50 MB.*5 MB.*SVG/);
+    expect(en("error.assetTooLarge")).toMatch(/50 MB.*5 MB.*SVG/);
+    expect(es("error.assetType")).toMatch(/PNG.*SVG/);
+    expect(en("error.assetUnsafe")).toMatch(/sanitized static vectors/);
+    expect(es("error.assetComplex")).toMatch(/16\.384.*40 megapíxeles/);
+  });
+
   // El catálogo declara sus dos idiomas por clave, así que la paridad la
   // garantiza el tipo. Esto comprueba lo que el tipo no ve: que ninguna
   // traducción quedó vacía o copiada de la clave.

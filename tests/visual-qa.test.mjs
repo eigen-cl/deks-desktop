@@ -182,3 +182,34 @@ test("visual QA renders an image whose bytes exist and only warns about the ones
   assert.equal(unresolved.length, 1);
   assert.equal(unresolved[0].asset_id, "asset-gone");
 });
+
+test("visual QA passes canonical SVG through to an injected renderer instead of omitting it", async () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50"><path d="M0 0 L100 50 Z" fill="#fff"/></svg>';
+  const vector = structuredClone(document);
+  vector.assets = [{ id: "asset-vector", kind: "embedded", mediaType: "image/svg+xml" }];
+  vector.elements = [{ id: "vector", kind: "image", name: "Vector", isLocked: false }];
+  vector.slides[0].states = [{
+    elementId: "vector", x: 0, y: 0, width: 100, height: 50, rotation: 0,
+    opacity: 1, zIndex: 0, assetId: "asset-vector", alt: "", fit: "contain",
+  }];
+  let received;
+  const service = new VisualQaService({
+    store: {
+      getPresentation: async () => vector,
+      readAssets: async () => ({
+        "asset-vector": { mediaType: "image/svg+xml", base64: Buffer.from(svg).toString("base64") },
+      }),
+    },
+    renderer: {
+      render: async (request) => {
+        received = request.assets["asset-vector"];
+        return { png: Buffer.from("png"), width: 1600, height: 900, measurements: [] };
+      },
+    },
+  });
+
+  const result = await service.renderSlide({ presentationId: vector.id, slideId: vector.slides[0].id });
+
+  assert.deepEqual(received, { mediaType: "image/svg+xml", base64: Buffer.from(svg).toString("base64") });
+  assert.deepEqual(result.report.missing_assets, []);
+});

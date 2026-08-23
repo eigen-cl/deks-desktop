@@ -1,15 +1,15 @@
 # DEKS Desktop
 
 Local-first Tauri host for the open DEKS presentation format. A person and an AI agent can edit the
-same presentation folder and see confirmed revisions appear in the editor without a Cloud account.
+same portable `.deks` file and see confirmed revisions appear in the editor without a Cloud account.
 
 ## What works in the first vertical slice
 
-- Create or open a folder-backed DEKS presentation.
+- Create or open one portable `.deks` presentation.
 - Edit through a Desktop-native editor that executes the canonical DEKS Core commands and renderer.
 - Compare `expectedRevision` before every write.
-- Replace `document.deks.json` atomically under an interoperable `project.lock`.
-- Keep assets and change receipts beside the document.
+- Replace the complete `.deks` atomically under an interoperable sibling lock and archive fingerprint CAS.
+- Keep embedded images in the archive; local idempotency/activity stays in a hidden sibling state directory.
 - Watch the canonical document and rebase the open editor after an external/MCP revision.
 - Run a local stdio MCP with `list_presentations`, `get_presentation`, read-only
   `render_slide_preview`, transactional `apply_commands` and `add_asset`.
@@ -24,15 +24,17 @@ portable between them without sharing or vendoring either editor implementation.
 ## Project format
 
 ```text
-my-presentation/
-├── document.deks.json   # canonical editable presentation
-├── assets/              # content-addressed local bytes
-├── changes/             # revision and idempotency receipts
-└── project.lock         # exists only during a write
+my-presentation.deks          # canonical document + content-addressed embedded assets
+.my-presentation.deks.lock    # transient; exists only during a write
+.my-presentation.deks.state/  # local MCP idempotency/activity, never part of the portable file
 ```
 
-`.deks` remains the portable ZIP used for import/export. Keeping the live project expanded avoids
-rewriting every asset on drag, resize or agent command.
+The visible and authoritative unit is the same `.deks` ZIP that Web and `@deks-js/document` open.
+Core alone owns `manifest.json`, asset hashing and defensive archive validation. Rust only picks
+files, moves bytes and performs an atomic compare-and-swap; the MCP uses the same JavaScript codec.
+
+An older expanded folder can be converted from the explicit **Migrate older folder** action. DEKS
+writes and reopens a verified neighboring `.deks`; it never deletes or rewrites the source folder.
 
 ## Development
 
@@ -116,8 +118,8 @@ download; normal local MCP use and preview rendering remain offline and browser 
 
 ## Local MCP
 
-Authorize one parent folder explicitly. Every direct child containing a valid
-`document.deks.json` becomes visible to the server:
+Authorize one parent folder explicitly. Every valid direct `*.deks` file becomes visible to the
+server. Expanded folders remain readable only for non-destructive migration compatibility:
 
 ```json
 {
@@ -139,20 +141,27 @@ presentation by its document ID; tools never receive filesystem paths. It create
 
 ### Assets
 
-Images live beside the document, in the project's `assets/` folder, named `<assetId>.<ext>`. The
-extension is derived from the media type, so resolving an asset needs only the descriptor the
-document already carries — never an absolute path. That is what lets a project folder be moved,
-copied or zipped whole without breaking.
+Images live inside the same `.deks`, content-addressed by SHA-256. Resolving one needs only the
+descriptor and packaged bytes — never an absolute path. The file can be moved or copied without
+breaking.
 
 The media type is always decided by the file's own bytes, never by its extension or by what a caller
 declares. A mislabelled file would enter the document with a lying `mediaType` and break wherever it
 was opened next.
 
-Desktop imports an image through the system file picker, which may point anywhere; the copy always
-lands inside the project. Agents use `add_asset`, which takes base64 bytes and no path at all —
+Desktop, Web and Cloud share the same ingestion envelope: PNG, JPEG, GIF and WebP up to 50 MB, or
+static sanitized SVG up to 5 MB. Every raster frame is limited to 16,384 px per side and 40
+megapixels, with at most 200 frames and 100 megapixels across all frames.
+SVG also has structural ceilings (10,000 nodes, depth 64, 100,000 attributes and 2,000,000 path-data
+characters) and rejects scripts, events, styles, text/font surfaces, embedded images and every
+external or `data:` reference. The canonical sanitized UTF-8 bytes—not the submitted XML—are what
+the `.deks` stores and hashes.
+
+Desktop imports an image through the system file picker, which may point anywhere; the bytes always
+land inside the archive. Agents use `add_asset`, which takes base64 bytes and no path at all —
 MCP only ever sees the authorized root, so accepting a path would hand it an arbitrary file reader.
-Both paths write the bytes before declaring the descriptor, and withdraw orphan bytes if the
-document rejects it, so a descriptor never points at a file that is not there.
+Both paths package the bytes in the same atomic transaction that declares the descriptor, so a
+descriptor never points at content that is not there.
 
 `add_asset` registers the asset and returns its id. Placing it on a slide is a separate
 `apply_commands` batch with `define-element` and `add-element-state` referencing that `assetId`.
@@ -168,9 +177,13 @@ DPR 1 with the canonical Core preview worker, blocks browser network access, and
 - Chromium DOM measurements for every element;
 - deterministic issues for text overflow, elements outside the canvas and unresolved assets.
 
-Embedded assets whose bytes exist are resolved from the project folder and rendered, so an agent can
+Embedded assets whose bytes exist are resolved from the `.deks` and rendered, so an agent can
 see the image it just added. Only an asset whose bytes are genuinely missing is omitted and reported
 as `asset_unresolved`.
+
+The Desktop host validates and passes canonical SVG to the Core 4.2 preview boundary. The editor,
+presenter and MCP preview all resolve the same sanitized embedded bytes; browser network access
+remains blocked and no SVG is silently omitted by Desktop's preparation step.
 
 The tool is read-only: it does not change the document revision, acquire the write lock, create a
 receipt or accept paths, URLs or output commands. A result without deterministic overflow still
@@ -183,20 +196,10 @@ contains it. For a native development checkout, install it once through the pack
 npm run mcp:install-browser
 ```
 
-To import the current Web example into an already authorized projects root while working from this
-repository:
-
-```bash
-mkdir -p "$DEKS_PROJECTS_ROOT/conoce-deks/assets" "$DEKS_PROJECTS_ROOT/conoce-deks/changes"
-cp ../deks-web/apps/web/src/examples/decks/conoce-deks.deks.json \
-  "$DEKS_PROJECTS_ROOT/conoce-deks/document.deks.json"
-```
-
-Open `$DEKS_PROJECTS_ROOT/conoce-deks` in the Desktop folder picker, or restart the local MCP and
-call `list_presentations`, then call `render_slide_preview` once for each returned slide ID. The
-example references `/brand/deks-lockup.svg`, which no asset in the project declares; the QA tool
-omits that image and reports `asset_unresolved` instead of resolving a path or making a network
-request. Add the bytes with `add_asset` and point the element at the returned id to see it render.
+Open a `.deks` from Web, Core or another Desktop installation with **Open DEKS file**. Restart the
+local MCP after placing it directly under `DEKS_PROJECTS_ROOT`, call `list_presentations`, then call
+`render_slide_preview` for its slides. Missing embedded bytes remain `asset_unresolved`; preview
+never guesses a filesystem path or makes a network request.
 
 ## Update channel
 
@@ -235,14 +238,14 @@ render URL and never performs fetch, upload or filesystem work.
 
 Desktop consumes exact published `@deks-js/document`, `@deks-js/renderer-core` and
 `@deks-js/render-preview` packages. Its own editor writes only canonical Core commands, and its host
-resolver turns embedded project assets into short-lived `blob:` URLs that are revoked after use.
+resolver turns embedded archive assets into short-lived `blob:` URLs that are revoked after use.
 The source tree never uses a relative `file:` dependency, vendors a private copy of Core or imports
 the Web editor.
 
 ## Repository boundary
 
 - `deks-core`: language/schema, commands, codecs, renderer and portable React.
-- `deks-desktop`: folders, locks, watcher, local shell and MCP process.
+- `deks-desktop`: files, locks, watcher, local shell and MCP process.
 - `deks-api`: relational Cloud persistence and remote MCP.
 - `deks-web`: backendless Web editor and Cloud product.
 

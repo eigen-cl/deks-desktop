@@ -11,7 +11,7 @@ const EXTRA_ROOT = "/Volumes/Trabajo/decks";
 
 function project(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
   return {
-    path: `${DEFAULT_ROOT}/gobernar-la-ia`,
+    path: `${DEFAULT_ROOT}/gobernar-la-ia.deks`,
     root: DEFAULT_ROOT,
     name: "Gobernar la IA",
     revision: 81,
@@ -71,7 +71,8 @@ function renderHome(overrides: Partial<HomeProps> = {}) {
     loadCover: async () => { throw new Error("no cover"); },
     onCreate: vi.fn(),
     onOpenProject: vi.fn(),
-    onOpenFolder: vi.fn(),
+    onOpenFile: vi.fn(),
+    onMigrateFolder: vi.fn(),
     onAddSourceFolder: vi.fn(),
     onRemoveSourceFolder: vi.fn(),
     onDeleteProject: vi.fn(),
@@ -82,6 +83,17 @@ function renderHome(overrides: Partial<HomeProps> = {}) {
 }
 
 describe("Home", () => {
+  it("abre archivos DEKS y deja la migración de carpetas como acción secundaria", async () => {
+    const user = userEvent.setup();
+    const { props } = renderHome();
+
+    await user.click(screen.getByRole("button", { name: "Abrir archivo DEKS" }));
+    expect(props.onOpenFile).toHaveBeenCalledOnce();
+
+    await user.click(screen.getByRole("button", { name: "Migrar carpeta anterior…" }));
+    expect(props.onMigrateFolder).toHaveBeenCalledOnce();
+  });
+
   it("muestra cada presentación con su recuento y la abre por su ruta", async () => {
     const user = userEvent.setup();
     const { props } = renderHome();
@@ -90,7 +102,7 @@ describe("Home", () => {
     expect(card).toHaveTextContent("15 slides");
 
     await user.click(card);
-    expect(props.onOpenProject).toHaveBeenCalledWith(`${DEFAULT_ROOT}/gobernar-la-ia`);
+    expect(props.onOpenProject).toHaveBeenCalledWith(`${DEFAULT_ROOT}/gobernar-la-ia.deks`);
   });
 
   it("dibuja la portada real de la presentación, no un rectángulo de color", async () => {
@@ -157,7 +169,7 @@ describe("Home", () => {
     const user = userEvent.setup();
     const { props } = renderHome({
       sourceFolders: [EXTRA_ROOT],
-      projects: [project(), project({ path: `${EXTRA_ROOT}/pulso`, root: EXTRA_ROOT, name: "Pulso" })],
+      projects: [project(), project({ path: `${EXTRA_ROOT}/pulso.deks`, root: EXTRA_ROOT, name: "Pulso" })],
     });
 
     await user.click(screen.getByRole("button", { name: "decks" }));
@@ -289,7 +301,7 @@ describe("eliminar una presentación", () => {
     expect(within(dialog).getByText(/papelera del sistema/)).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole("button", { name: "Mover a la papelera" }));
-    expect(props.onDeleteProject).toHaveBeenCalledWith(`${DEFAULT_ROOT}/gobernar-la-ia`);
+    expect(props.onDeleteProject).toHaveBeenCalledWith(`${DEFAULT_ROOT}/gobernar-la-ia.deks`);
   });
 
   it("cancelar deja la presentación intacta", async () => {
@@ -318,6 +330,6 @@ describe("cambiar el nombre", () => {
     await user.type(field, "Gobernanza 2026");
     await user.click(screen.getByRole("button", { name: "Guardar el nombre" }));
 
-    expect(props.onRenameProject).toHaveBeenCalledWith(`${DEFAULT_ROOT}/gobernar-la-ia`, "Gobernanza 2026");
+    expect(props.onRenameProject).toHaveBeenCalledWith(`${DEFAULT_ROOT}/gobernar-la-ia.deks`, "Gobernanza 2026");
   });
 });

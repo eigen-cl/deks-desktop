@@ -56,6 +56,7 @@ function renderHome(overrides: Partial<HomeProps> = {}) {
   const props: HomeProps = {
     t: translator("es"),
     locale: "es",
+    localePreference: "system",
     onLocaleChange: vi.fn(),
     projects: [project()],
     defaultRoot: DEFAULT_ROOT,
@@ -99,7 +100,7 @@ describe("Home", () => {
     const { props } = renderHome();
 
     const card = screen.getByRole("button", { name: /Gobernar la IA/ });
-    expect(card).toHaveTextContent("15 slides");
+    expect(card).toHaveTextContent("15 diapositivas");
 
     await user.click(card);
     expect(props.onOpenProject).toHaveBeenCalledWith(`${DEFAULT_ROOT}/gobernar-la-ia.deks`);
@@ -197,18 +198,33 @@ describe("Home", () => {
 });
 
 describe("configuración", () => {
-  it("guarda el idioma desde configuración y reescribe la pantalla completa", async () => {
+  it("ofrece System, Español e English y reescribe la pantalla completa", async () => {
     const user = userEvent.setup();
     const onLocaleChange = vi.fn();
     const { rerender, props } = renderHome({ onLocaleChange });
 
     await user.click(screen.getByRole("button", { name: "Configuración" }));
     await user.click(screen.getByRole("combobox", { name: "Idioma" }));
+    expect(await screen.findByRole("option", { name: "System" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Español" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "English" })).toBeInTheDocument();
     await user.click(await screen.findByRole("option", { name: "English" }));
     expect(onLocaleChange).toHaveBeenCalledWith("en");
 
-    rerender(<Home {...props} locale="en" t={translator("en")} />);
+    rerender(<Home {...props} locale="en" localePreference="en" t={translator("en")} />);
     expect(screen.getByRole("heading", { name: "Presentations" })).toBeInTheDocument();
+  });
+
+  it("persiste system como preferencia en vez de congelar el idioma resuelto", async () => {
+    const user = userEvent.setup();
+    const onLocaleChange = vi.fn();
+    renderHome({ locale: "en", localePreference: "en", t: translator("en"), onLocaleChange });
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    await user.click(screen.getByRole("combobox", { name: "Language" }));
+    await user.click(await screen.findByRole("option", { name: "System" }));
+
+    expect(onLocaleChange).toHaveBeenCalledWith("system");
   });
 
   it("sólo ofrece los arneses que existen en este equipo e instala MCP y skills juntos", async () => {
@@ -227,7 +243,7 @@ describe("configuración", () => {
     await user.click(screen.getByRole("button", { name: "Configuración" }));
     await user.click(screen.getByRole("button", { name: "Agentes" }));
 
-    expect(await screen.findByRole("heading", { name: "Arneses detectados" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Agentes detectados" })).toBeInTheDocument();
     // Lo que no está instalado no llega a pantalla: no es una decisión posible.
     expect(screen.queryByText("Cursor")).not.toBeInTheDocument();
 

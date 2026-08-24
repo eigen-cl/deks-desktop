@@ -83,7 +83,7 @@ export function upgradeLegacyDocument(value: unknown): DeksDocument {
   const document = {
     format: "deks" as const,
     id: canonicalId(String(legacy.id)),
-    name: String(legacy.name ?? "Presentación"),
+    name: String(legacy.name ?? "Presentation"),
     revision: Number(legacy.revision ?? 0),
     canvas: legacy.canvas ?? {
       width: Number(legacy.canvasWidth ?? 1600),

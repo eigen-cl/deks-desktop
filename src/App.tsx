@@ -32,7 +32,14 @@ import {
   type PaletteKey,
   type ProjectSummary,
 } from "./model";
-import { DEFAULT_LOCALE, resolveLocale, translator, type Locale, type TranslationKey } from "./i18n";
+import {
+  applyDocumentLocale,
+  resolveLocale,
+  resolveLocalePreference,
+  translator,
+  type LocalePreference,
+  type TranslationKey,
+} from "./i18n";
 import { checkForUpdate, installUpdate, type UpdateState } from "./updates";
 import type { Update } from "@tauri-apps/plugin-updater";
 
@@ -48,7 +55,11 @@ function imageErrorKey(error: unknown, fallback: TranslationKey): TranslationKey
 
 export function App() {
   const [project, setProject] = useState<OpenProject>();
-  const [locale, setLocale] = useState<Locale>(DEFAULT_LOCALE);
+  const [localePreference, setLocalePreference] = useState<LocalePreference>("system");
+  const [systemLanguages, setSystemLanguages] = useState<readonly string[]>(() => browserLanguages());
+  const confirmedLocale = useRef<LocalePreference>("system");
+  const localeMutation = useRef(0);
+  const localeWrites = useRef<Promise<void>>(Promise.resolve());
   const [defaultRoot, setDefaultRoot] = useState("");
   const [sourceFolders, setSourceFolders] = useState<string[]>([]);
   const [managedInstalls, setManagedInstalls] = useState<ManagedInstall[]>([]);
@@ -70,6 +81,10 @@ export function App() {
 
   // Los textos se guardan como clave, no como frase ya traducida: cambiar de
   // idioma tiene que reescribir también el aviso que está en pantalla.
+  const locale = useMemo(
+    () => resolveLocale(localePreference, systemLanguages),
+    [localePreference, systemLanguages],
+  );
   const t = useMemo(() => translator(locale), [locale]);
   const error = errorKey && t(errorKey);
 
@@ -88,14 +103,24 @@ export function App() {
         setDefaultRoot(workspace.defaultRoot);
         setSourceFolders(workspace.sourceFolders);
         setManagedInstalls(workspace.managedInstalls);
-        setLocale(resolveLocale(workspace.locale, navigator.languages ?? [navigator.language]));
+        const preference = resolveLocalePreference(workspace.locale);
+        confirmedLocale.current = preference;
+        setLocalePreference(preference);
         await refreshProjects([workspace.defaultRoot, ...workspace.sourceFolders]);
       } catch {
         // Sin workspace el inicio sigue en pie: se puede abrir un `.deks` a mano.
-        setLocale(resolveLocale(undefined, navigator.languages ?? [navigator.language]));
+        setLocalePreference("system");
       }
     })();
   }, [refreshProjects]);
+
+  useEffect(() => {
+    const followSystemLanguage = () => setSystemLanguages(browserLanguages());
+    window.addEventListener("languagechange", followSystemLanguage);
+    return () => window.removeEventListener("languagechange", followSystemLanguage);
+  }, []);
+
+  useEffect(() => applyDocumentLocale(locale), [locale]);
 
   useEffect(() => {
     const unlisten = onProjectChanged(async (event) => {
@@ -193,7 +218,7 @@ export function App() {
       const created = await createProject(
         defaultRoot,
         name,
-        createPresentation(name, canvas, crypto.randomUUID(), palette),
+        createPresentation(name, canvas, crypto.randomUUID(), palette, t("default.initialSlide")),
       );
       await watchProject(created.path);
       assetRef.current = created.assets;
@@ -206,12 +231,25 @@ export function App() {
     }
   };
 
-  const chooseLocale = async (next: Locale) => {
-    setLocale(next);
+  const chooseLocale = async (next: LocalePreference) => {
+    const mutation = ++localeMutation.current;
+    setLocalePreference(next);
+    // Encadenar estas escrituras conserva el orden de las elecciones aunque
+    // dos cambios se hagan antes de que el host termine el primero; el rechazo
+    // queda absorbido sólo en la cola para que la preferencia siguiente todavía
+    // pueda guardarse.
+    const write = localeWrites.current.then(() => persistLocale(next));
+    localeWrites.current = write.catch(() => undefined);
     try {
-      await persistLocale(next);
+      await write;
+      confirmedLocale.current = next;
     } catch {
-      // El idioma ya cambió en pantalla; no poder guardarlo no lo revierte.
+      // Una escritura antigua no puede deshacer una elección más nueva. Si la
+      // vigente falla, se vuelve a lo último que sí llegó al disco.
+      if (mutation === localeMutation.current) {
+        setLocalePreference(confirmedLocale.current);
+        setErrorKey("error.locale");
+      }
     }
   };
 
@@ -311,6 +349,7 @@ export function App() {
         <Home
           t={t}
           locale={locale}
+          localePreference={localePreference}
           onLocaleChange={(next) => void chooseLocale(next)}
           projects={projects}
           defaultRoot={defaultRoot}
@@ -383,13 +422,15 @@ export function App() {
       {error && <aside className="workspace-error" role="alert">{error}</aside>}
       <Editor
         t={t}
+        localePreference={localePreference}
+        onLocaleChange={(next) => void chooseLocale(next)}
         source={project.document}
         persistence={persistence}
         saveState={saveState}
         assets={project.assets}
         onImportAsset={async () => {
           try {
-            const source = await chooseImage(t("editor.addImage"));
+            const source = await chooseImage(t("editor.addImage"), t("picker.images"));
             if (!source) return undefined;
             const imported = await importAsset(source);
             assetRef.current = [
@@ -411,4 +452,9 @@ export function App() {
       />
     </main>
   );
+}
+
+function browserLanguages(): readonly string[] {
+  if (navigator.languages.length > 0) return [...navigator.languages];
+  return navigator.language ? [navigator.language] : [];
 }

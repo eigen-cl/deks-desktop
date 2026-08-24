@@ -11,12 +11,13 @@ import { IconButton } from "./ui/IconButton";
 import { Menu } from "./ui/Menu";
 import { Modal } from "./ui/Modal";
 import { TextField } from "./ui/fields";
-import type { Locale, Translate } from "./i18n";
+import type { Locale, LocalePreference, Translate } from "./i18n";
 
 export interface HomeProps {
   t: Translate;
   locale: Locale;
-  onLocaleChange(locale: Locale): void;
+  localePreference: LocalePreference;
+  onLocaleChange(locale: LocalePreference): void;
   projects: ProjectSummary[];
   defaultRoot: string;
   sourceFolders: string[];
@@ -44,6 +45,7 @@ export interface HomeProps {
 export function Home({
   t,
   locale,
+  localePreference,
   onLocaleChange,
   projects,
   defaultRoot,
@@ -285,7 +287,7 @@ export function Home({
       {settings && (
         <SettingsDialog
           t={t}
-          locale={locale}
+          localePreference={localePreference}
           defaultRoot={defaultRoot}
           sourceFolders={sourceFolders}
           busy={busy}

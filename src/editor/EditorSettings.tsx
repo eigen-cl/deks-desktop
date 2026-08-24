@@ -1,14 +1,16 @@
 import { Modal } from "../ui/Modal";
-import { NumberField, Toggle } from "../ui/fields";
+import { NumberField, SelectField, Toggle } from "../ui/fields";
 import type { EditorPreferences } from "./preferences";
-import type { Translate } from "../i18n";
+import { LOCALE_PREFERENCES, type LocalePreference, type Translate } from "../i18n";
 
 export interface EditorSettingsProps {
   t: Translate;
+  localePreference: LocalePreference;
   preferences: EditorPreferences;
   motionBeatMs: number;
   disabled?: boolean;
   onPreferenceChange(patch: Partial<EditorPreferences>): void;
+  onLocaleChange(locale: LocalePreference): void;
   onMotionBeatChange(value: number): void;
   onClose(): void;
 }
@@ -20,15 +22,31 @@ export interface EditorSettingsProps {
  */
 export function EditorSettings({
   t,
+  localePreference,
   preferences,
   motionBeatMs,
   disabled = false,
   onPreferenceChange,
+  onLocaleChange,
   onMotionBeatChange,
   onClose,
 }: EditorSettingsProps) {
   return (
     <Modal title={t("editor.settings")} closeLabel={t("action.close")} onClose={onClose}>
+      <section className="panel">
+        <h3>{t("settings.general")}</h3>
+        <SelectField
+          label={t("home.language")}
+          value={localePreference}
+          options={LOCALE_PREFERENCES.map((value) => ({
+            value,
+            label: t(`locale.${value}` as const),
+          }))}
+          onValueChange={(value) => onLocaleChange(value as LocalePreference)}
+        />
+        <p className="panel__hint">{t("settings.languageHint")}</p>
+      </section>
+
       <section className="panel">
         <h3>{t("editor.editing")}</h3>
         <Toggle

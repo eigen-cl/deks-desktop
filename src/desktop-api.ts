@@ -12,7 +12,7 @@ import {
 } from "@deks-js/document";
 import { toCanonicalDocument } from "./legacy-document";
 import type { ImportedAsset } from "./editor/elements";
-import type { Locale } from "./i18n";
+import type { LocalePreference } from "./i18n";
 import type {
   DeksFileChanged,
   DeksFileEntry,
@@ -72,7 +72,7 @@ export async function listProjects(roots: string[]): Promise<ProjectSummary[]> {
   }, []);
 }
 
-export function setLocale(locale: Locale): Promise<void> {
+export function setLocale(locale: LocalePreference): Promise<void> {
   return invoke("set_locale", { locale });
 }
 
@@ -235,12 +235,12 @@ export function importAsset(sourcePath: string): Promise<ImportedAssetBytes> {
   });
 }
 
-export async function chooseImage(title: string): Promise<string | undefined> {
+export async function chooseImage(title: string, filterName: string): Promise<string | undefined> {
   const selected = await open({
     title,
     multiple: false,
     directory: false,
-    filters: [{ name: "Imagen", extensions: ["png", "jpg", "jpeg", "gif", "webp", "svg"] }],
+    filters: [{ name: filterName, extensions: ["png", "jpg", "jpeg", "gif", "webp", "svg"] }],
   });
   return typeof selected === "string" ? selected : undefined;
 }

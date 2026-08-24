@@ -11,7 +11,11 @@
 export const LOCALES = ["es", "en"] as const;
 export type Locale = (typeof LOCALES)[number];
 
-export const DEFAULT_LOCALE: Locale = "es";
+export const LOCALE_PREFERENCES = ["system", ...LOCALES] as const;
+export type LocalePreference = (typeof LOCALE_PREFERENCES)[number];
+
+/** Idioma de respaldo para sistemas cuyo idioma principal no es español. */
+export const DEFAULT_LOCALE: Locale = "en";
 
 const CATALOG = {
   "app.title": ["DEKS Desktop", "DEKS Desktop"],
@@ -29,19 +33,22 @@ const CATALOG = {
   "home.removeSourceFolder": ["Quitar esta carpeta de la vista", "Remove this folder from the view"],
   "home.sources": ["Carpetas", "Folders"],
   "home.defaultRoot": ["Carpeta DEKS", "DEKS folder"],
-  "home.slideCount": ["{count} slides", "{count} slides"],
-  "home.slideCountOne": ["1 slide", "1 slide"],
+  "home.slideCount": ["{count} diapositivas", "{count} slides"],
+  "home.slideCountOne": ["1 diapositiva", "1 slide"],
   "home.revision": ["Revisión {revision}", "Revision {revision}"],
   "home.searchLabel": ["Buscar presentación", "Search presentations"],
   "home.searchPlaceholder": ["Buscar", "Search"],
   "home.noMatches": ["Ninguna presentación coincide con «{query}».", "No presentation matches “{query}”."],
   "home.language": ["Idioma", "Language"],
+  "locale.system": ["System", "System"],
+  "locale.es": ["Español", "Español"],
+  "locale.en": ["English", "English"],
   "home.agents": ["Agentes", "Agents"],
   "home.installMcp": ["Instalar MCP local", "Install local MCP"],
   "home.agentsHint": ["Se instalan sólo donde tú elijas. Nunca reemplazamos archivos existentes.", "Installed only where you choose. We never replace existing files."],
-  "home.localContract": ["Documento, assets, historial y MCP permanecen en tu equipo.", "Document, assets, history and MCP stay on your machine."],
+  "home.localContract": ["Documento, recursos, historial y MCP permanecen en tu equipo.", "Document, assets, history and MCP stay on your machine."],
   "home.settings": ["Configuración", "Settings"],
-  "home.tagline": ["Presentaciones locales que se mueven entre checkpoints.", "Local presentations that move between checkpoints."],
+  "home.tagline": ["Presentaciones locales que avanzan entre puntos de control.", "Local presentations that move between checkpoints."],
   "home.allFolders": ["Todas", "All"],
   "home.updatedAt": ["Editado {date}", "Edited {date}"],
   "home.emptySearchAction": ["Limpiar búsqueda", "Clear search"],
@@ -88,10 +95,10 @@ const CATALOG = {
   "settings.folders": ["Carpetas", "Folders"],
   "settings.foldersHint": ["DEKS lista las presentaciones que viven en estas carpetas. Nada se copia ni se mueve.", "DEKS lists the presentations living in these folders. Nothing is copied or moved."],
   "settings.agents": ["Agentes", "Agents"],
-  "settings.languageHint": ["Cambia toda la interfaz al instante y se recuerda para la próxima vez.", "Changes the whole interface right away and is remembered next time."],
+  "settings.languageHint": ["Sistema sigue el idioma principal de tu equipo. El cambio se aplica al instante y se recuerda para la próxima vez.", "System follows your device's primary language. Changes apply immediately and are remembered next time."],
 
   "agents.intro": ["Instalar deja tu agente listo para crear y editar presentaciones de DEKS: se instala el servidor MCP y las skills juntos, porque uno sin el otro no sirve.", "Installing gets your agent ready to create and edit DEKS presentations: the MCP server and the skills are installed together, because one without the other is useless."],
-  "agents.detectedTitle": ["Arneses detectados", "Detected harnesses"],
+  "agents.detectedTitle": ["Agentes detectados", "Detected agents"],
   "agents.detecting": ["Buscando qué tienes instalado…", "Looking for what you have installed…"],
   "agents.none": ["No encontramos ningún agente instalado en este equipo. Instala Claude, Codex, Cursor u otro cliente MCP y vuelve aquí.", "We found no agent installed on this machine. Install Claude, Codex, Cursor or another MCP client and come back here."],
   "agents.ready": ["Listo", "Ready"],
@@ -148,6 +155,7 @@ const CATALOG = {
   "error.assetUnsafe": ["Ese SVG contiene contenido inseguro o no compatible. DEKS acepta sólo vectores estáticos sanitizados.", "That SVG contains unsafe or unsupported content. DEKS accepts sanitized static vectors only."],
   "error.assetComplex": ["La imagen es demasiado compleja: máximo 16.384 px por lado y 40 megapíxeles; los SVG también tienen límites estructurales.", "The image is too complex: maximum 16,384 px per side and 40 megapixels; SVGs also have structural limits."],
   "error.migrate": ["No pudimos convertir esa carpeta. La carpeta original quedó intacta.", "We could not convert that folder. The original folder was left untouched."],
+  "error.locale": ["No pudimos guardar el idioma. Se restauró la preferencia anterior.", "We could not save the language. The previous preference was restored."],
 
   "agent.edited": ["Agente editó la revisión {revision}", "An agent edited revision {revision}"],
   "agent.dismiss": ["Ocultar actividad", "Hide activity"],
@@ -161,7 +169,7 @@ const CATALOG = {
   "update.apply": ["Actualizar", "Update"],
   "update.dismiss": ["Ocultar aviso de actualización", "Hide update notice"],
 
-  "editor.slides": ["Slides", "Slides"],
+  "editor.slides": ["Diapositivas", "Slides"],
   "editor.inspector": ["Inspector", "Inspector"],
   "editor.insert": ["Insertar", "Insert"],
   "editor.present": ["Presentar", "Present"],
@@ -185,21 +193,22 @@ const CATALOG = {
   "editor.addLine": ["Línea", "Line"],
   "editor.addIcon": ["Ícono", "Icon"],
   "editor.addImage": ["Imagen", "Image"],
+  "picker.images": ["Imágenes", "Images"],
   "editor.importingImage": ["Importando…", "Importing…"],
   "editor.undo": ["Deshacer", "Undo"],
   "editor.redo": ["Rehacer", "Redo"],
-  "editor.newSlide": ["Slide vacía", "Blank slide"],
-  "editor.duplicateSlide": ["Duplicar slide", "Duplicate slide"],
-  "editor.deleteSlide": ["Eliminar slide", "Delete slide"],
-  "editor.slideNumber": ["Slide {number}: {name}", "Slide {number}: {name}"],
-  "editor.moveSlideUp": ["Mover la slide {number} arriba", "Move slide {number} up"],
-  "editor.moveSlideDown": ["Mover la slide {number} abajo", "Move slide {number} down"],
-  "editor.dragSlide": ["Arrastrar la slide {number}", "Drag slide {number}"],
-  "editor.slideDefaultName": ["Slide {number}", "Slide {number}"],
+  "editor.newSlide": ["Diapositiva vacía", "Blank slide"],
+  "editor.duplicateSlide": ["Duplicar diapositiva", "Duplicate slide"],
+  "editor.deleteSlide": ["Eliminar diapositiva", "Delete slide"],
+  "editor.slideNumber": ["Diapositiva {number}: {name}", "Slide {number}: {name}"],
+  "editor.moveSlideUp": ["Mover la diapositiva {number} arriba", "Move slide {number} up"],
+  "editor.moveSlideDown": ["Mover la diapositiva {number} abajo", "Move slide {number} down"],
+  "editor.dragSlide": ["Arrastrar la diapositiva {number}", "Drag slide {number}"],
+  "editor.slideDefaultName": ["Diapositiva {number}", "Slide {number}"],
   "editor.slideCopyName": ["{name} copia", "{name} copy"],
-  "editor.slideProperties": ["Propiedades de slide", "Slide properties"],
-  "editor.tabSlide": ["Slide", "Slide"],
-  "editor.slideName": ["Nombre de la slide", "Slide name"],
+  "editor.slideProperties": ["Propiedades de la diapositiva", "Slide properties"],
+  "editor.tabSlide": ["Diapositiva", "Slide"],
+  "editor.slideName": ["Nombre de la diapositiva", "Slide name"],
   "editor.background": ["Fondo", "Background"],
   "editor.backgroundKind": ["Tipo de fondo", "Background type"],
   "editor.solid": ["Sólido", "Solid"],
@@ -209,11 +218,11 @@ const CATALOG = {
   "editor.gradientAngle": ["Ángulo", "Angle"],
   "editor.element": ["Elemento", "Element"],
   "editor.elements": ["Elementos", "Elements"],
-  "editor.elementsInSlide": ["En esta slide", "On this slide"],
-  "editor.elementsElsewhere": ["En otras slides", "On other slides"],
-  "editor.elementsEmpty": ["Esta slide todavía no tiene elementos.", "This slide has no elements yet."],
-  "editor.elementsElsewhereEmpty": ["No hay elementos en otras slides.", "There are no elements on other slides."],
-  "editor.addToSlide": ["Agregar «{name}» a esta slide", "Add “{name}” to this slide"],
+  "editor.elementsInSlide": ["En esta diapositiva", "On this slide"],
+  "editor.elementsElsewhere": ["En otras diapositivas", "On other slides"],
+  "editor.elementsEmpty": ["Esta diapositiva todavía no tiene elementos.", "This slide has no elements yet."],
+  "editor.elementsElsewhereEmpty": ["No hay elementos en otras diapositivas.", "There are no elements on other slides."],
+  "editor.addToSlide": ["Agregar «{name}» a esta diapositiva", "Add “{name}” to this slide"],
   "editor.selectElement": ["Seleccionar «{name}»", "Select “{name}”"],
   "editor.elementName": ["Nombre del elemento", "Element name"],
   "editor.width": ["Ancho", "Width"],
@@ -254,7 +263,7 @@ const CATALOG = {
   "editor.fitCover": ["Cubrir", "Cover"],
   "editor.fitFill": ["Estirar", "Stretch"],
   "editor.resize": ["Redimensionar {name}", "Resize {name}"],
-  "editor.removeFromSlide": ["Quitar de esta slide", "Remove from this slide"],
+  "editor.removeFromSlide": ["Quitar de esta diapositiva", "Remove from this slide"],
   "editor.deleteEverywhere": ["Eliminar de la presentación", "Delete from presentation"],
   "editor.duplicateElement": ["Duplicar elemento", "Duplicate element"],
   "editor.bringForward": ["Traer adelante", "Bring forward"],
@@ -263,29 +272,29 @@ const CATALOG = {
   "editor.unlock": ["Desbloquear", "Unlock"],
   "editor.locked": ["Bloqueado", "Locked"],
   "editor.noSelection": ["Selecciona un elemento para editarlo.", "Select an element to edit it."],
-  "editor.emptyDocument": ["La presentación no contiene slides.", "This presentation has no slides."],
+  "editor.emptyDocument": ["La presentación no contiene diapositivas.", "This presentation has no slides."],
   "editor.exit": ["Salir del modo presentación", "Leave presentation mode"],
-  "editor.previousSlide": ["Slide anterior", "Previous slide"],
-  "editor.nextSlide": ["Slide siguiente", "Next slide"],
+  "editor.previousSlide": ["Diapositiva anterior", "Previous slide"],
+  "editor.nextSlide": ["Diapositiva siguiente", "Next slide"],
   "editor.settings": ["Ajustes del editor", "Editor settings"],
   "editor.renamePresentation": ["Cambiar el nombre de la presentación", "Rename the presentation"],
   "editor.presentationName": ["Nombre de la presentación", "Presentation name"],
-  "editor.animateSlideChange": ["Animar al cambiar de slide", "Animate when changing slide"],
-  "editor.animateHint": ["Reproduce la transición declarada al pasar a una slide vecina.", "Plays the declared transition when moving to a neighbouring slide."],
+  "editor.animateSlideChange": ["Animar al cambiar de diapositiva", "Animate when changing slide"],
+  "editor.animateHint": ["Reproduce la transición declarada al pasar a una diapositiva vecina.", "Plays the declared transition when moving to a neighbouring slide."],
   "editor.editing": ["Edición", "Editing"],
   "editor.showGrid": ["Mostrar cuadrícula", "Show grid"],
   "editor.snapToGrid": ["Ajustar a la cuadrícula", "Snap to grid"],
   "editor.snapToElements": ["Ajustar a otros elementos", "Snap to other elements"],
   "editor.snapHint": ["Mantén Alt mientras arrastras para ignorar los ajustes.", "Hold Alt while dragging to ignore snapping."],
   "editor.gridSize": ["Paso de la cuadrícula", "Grid step"],
-  "editor.motionBeat": ["Beat base", "Base beat"],
-  "editor.motionBeatHint": ["El beat define el pulso que heredan las transiciones.", "The beat defines the pulse inherited by transitions."],
+  "editor.motionBeat": ["Pulso base", "Base beat"],
+  "editor.motionBeatHint": ["El pulso define el ritmo que heredan las transiciones.", "The beat defines the pulse inherited by transitions."],
   "editor.zoomIn": ["Acercar", "Zoom in"],
   "editor.zoomOut": ["Alejar", "Zoom out"],
   "editor.zoomFit": ["Ajustar", "Fit"],
   "editor.pan": ["Mover el lienzo", "Pan the canvas"],
   "editor.zoomLevel": ["Zoom {percent}%", "Zoom {percent}%"],
-  "editor.slideMenu": ["Acciones de la slide {number}", "Slide {number} actions"],
+  "editor.slideMenu": ["Acciones de la diapositiva {number}", "Slide {number} actions"],
   "editor.elementMenu": ["Acciones de {name}", "{name} actions"],
   "editor.canvasLabel": ["Lienzo de {width} por {height}", "Canvas {width} by {height}"],
   "editor.movedAnnouncement": ["{name}: movido a {x}, {y}", "{name}: moved to {x}, {y}"],
@@ -296,7 +305,7 @@ const CATALOG = {
   "motion.in": ["Entrada", "In"],
   "motion.out": ["Salida", "Out"],
   "motion.morph": ["Continuo", "Morph"],
-  "motion.inHint": ["Cómo aparece lo que sólo existe en esta slide.", "How what only exists on this slide appears."],
+  "motion.inHint": ["Cómo aparece lo que sólo existe en esta diapositiva.", "How what only exists on this slide appears."],
   "motion.outHint": ["Cómo desaparece lo que deja de estar en la siguiente.", "How what leaves before the next slide disappears."],
   "motion.morphHint": ["Cómo se comporta lo que sigue existiendo en ambas.", "How what exists on both behaves."],
   "motion.animation": ["Animación", "Animation"],
@@ -306,8 +315,8 @@ const CATALOG = {
   "motion.crop": ["Cortina", "Crop"],
   "motion.wipe": ["Descubrir", "Wipe"],
   "motion.wipeHint": ["El elemento no se mueve: la máscara lo va descubriendo desde ese borde, como una cortina que se abre sobre algo que ya estaba ahí.", "The element does not move: the mask uncovers it from that edge, like a curtain opening over something already there."],
-  "motion.delayBeats": ["Espera (beats)", "Delay (beats)"],
-  "motion.delayHint": ["Las dos esperas se suman. En beats sigue el tempo de la presentación, así que «una animación después» se mantiene si cambias el ritmo; en milisegundos fija un instante exacto.", "The two delays add up. In beats it follows the deck's tempo, so “one animation later” survives a change of rhythm; in milliseconds it pins an exact instant."],
+  "motion.delayBeats": ["Espera (pulsos)", "Delay (beats)"],
+  "motion.delayHint": ["Las dos esperas se suman. En pulsos sigue el ritmo de la presentación, así que «una animación después» se mantiene si cambias el ritmo; en milisegundos fija un instante exacto.", "The two delays add up. In beats it follows the deck's tempo, so “one animation later” survives a change of rhythm; in milliseconds it pins an exact instant."],
   "motion.effectiveDelay": ["espera {ms} ms", "waits {ms} ms"],
   "motion.cropHint": ["El elemento se revela dentro de su propia caja, sin moverla y sin desvanecerse. Es la mejor opción cuando un texto reemplaza a otro en el mismo lugar.", "The element is revealed inside its own box, which never moves and never fades. It is the best option when one text replaces another in the same place."],
   "motion.scale": ["Escalar", "Scale"],
@@ -319,7 +328,7 @@ const CATALOG = {
   "motion.top": ["Arriba", "Top"],
   "motion.bottom": ["Abajo", "Bottom"],
   "motion.scaleFrom": ["Escala inicial", "Initial scale"],
-  "motion.duration": ["Duración (beats)", "Duration (beats)"],
+  "motion.duration": ["Duración (pulsos)", "Duration (beats)"],
   "motion.delay": ["Retraso (ms)", "Delay (ms)"],
   "motion.easing": ["Curva", "Easing"],
   "motion.easeInOut": ["Suave", "Smooth"],
@@ -327,9 +336,9 @@ const CATALOG = {
   "motion.easeIn": ["Entrada suave", "Ease in"],
   "motion.linear": ["Lineal", "Linear"],
   "motion.inherited": ["Heredado del documento", "Inherited from the document"],
-  "motion.declared": ["Declarado en esta slide", "Declared on this slide"],
+  "motion.declared": ["Declarado en esta diapositiva", "Declared on this slide"],
   "motion.reset": ["Volver a heredar", "Inherit again"],
-  "motion.effective": ["{ms} ms con el beat actual", "{ms} ms at the current beat"],
+  "motion.effective": ["{ms} ms con el pulso actual", "{ms} ms at the current beat"],
 
   "home.renamePresentation": ["Cambiar el nombre…", "Rename…"],
   "rename.title": ["Cambiar el nombre", "Rename"],
@@ -342,6 +351,16 @@ const CATALOG = {
   "delete.body": ["Se mueve a la papelera del sistema con todo su contenido. Puedes recuperarla desde ahí.", "It moves to the system trash with all its content. You can recover it from there."],
   "delete.confirm": ["Mover a la papelera", "Move to trash"],
   "error.delete": ["No pudimos eliminar esa presentación. Revisa los permisos e inténtalo otra vez.", "We could not delete that presentation. Check the permissions and try again."],
+
+  "default.initialSlide": ["Inicio", "Start"],
+  "default.textName": ["Texto", "Text"],
+  "default.textContent": ["Nuevo texto", "New text"],
+  "default.numberName": ["Número", "Number"],
+  "default.iconName": ["Ícono", "Icon"],
+  "default.lineName": ["Línea", "Line"],
+  "default.ellipseName": ["Elipse", "Ellipse"],
+  "default.rectangleName": ["Rectángulo", "Rectangle"],
+  "default.imageName": ["Imagen", "Image"],
 } as const satisfies Record<string, readonly [string, string]>;
 
 export type TranslationKey = keyof typeof CATALOG;
@@ -349,10 +368,16 @@ export type TranslationKey = keyof typeof CATALOG;
 /** Todas las claves del catálogo. La prueba de paridad las recorre desde aquí. */
 export const TRANSLATION_KEYS = Object.keys(CATALOG) as TranslationKey[];
 
-export const LOCALE_LABELS: Record<Locale, string> = { es: "Español", en: "English" };
-
 export function isLocale(value: unknown): value is Locale {
   return typeof value === "string" && (LOCALES as readonly string[]).includes(value);
+}
+
+export function isLocalePreference(value: unknown): value is LocalePreference {
+  return typeof value === "string" && (LOCALE_PREFERENCES as readonly string[]).includes(value);
+}
+
+export function resolveLocalePreference(stored: unknown): LocalePreference {
+  return isLocalePreference(stored) ? stored : "system";
 }
 
 /**
@@ -361,11 +386,12 @@ export function isLocale(value: unknown): value is Locale {
  */
 export function resolveLocale(stored: unknown, systemLanguages: readonly string[] = []): Locale {
   if (isLocale(stored)) return stored;
-  for (const language of systemLanguages) {
-    const primary = language.toLowerCase().split("-")[0];
-    if (isLocale(primary)) return primary;
-  }
-  return DEFAULT_LOCALE;
+  const primary = systemLanguages[0]?.toLowerCase().split("-")[0];
+  return primary === "es" ? "es" : DEFAULT_LOCALE;
+}
+
+export function applyDocumentLocale(locale: Locale, root: HTMLElement = document.documentElement): void {
+  root.lang = locale;
 }
 
 export type Translate = (key: TranslationKey, values?: Record<string, string | number>) => string;

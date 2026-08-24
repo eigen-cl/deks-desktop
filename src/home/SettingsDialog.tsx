@@ -3,18 +3,18 @@ import { FolderPlus, X } from "lucide-react";
 import { Modal } from "../ui/Modal";
 import { SelectField } from "../ui/fields";
 import { AgentSetup, type AgentSetupProps } from "./AgentSetup";
-import { LOCALES, LOCALE_LABELS, type Locale, type Translate } from "../i18n";
+import { LOCALE_PREFERENCES, type LocalePreference, type Translate } from "../i18n";
 
 type Section = "general" | "folders" | "agents";
 
 export interface SettingsDialogProps {
   t: Translate;
-  locale: Locale;
+  localePreference: LocalePreference;
   defaultRoot: string;
   sourceFolders: string[];
   busy?: boolean;
   agents: Omit<AgentSetupProps, "t" | "projectsRoot" | "busy">;
-  onLocaleChange(locale: Locale): void;
+  onLocaleChange(locale: LocalePreference): void;
   onAddSourceFolder(): void;
   onRemoveSourceFolder(path: string): void;
   onClose(): void;
@@ -29,7 +29,7 @@ const SECTIONS: Section[] = ["general", "folders", "agents"];
  */
 export function SettingsDialog({
   t,
-  locale,
+  localePreference,
   defaultRoot,
   sourceFolders,
   busy = false,
@@ -68,9 +68,12 @@ export function SettingsDialog({
             <section className="panel">
               <SelectField
                 label={t("home.language")}
-                value={locale}
-                options={LOCALES.map((value) => ({ value, label: LOCALE_LABELS[value] }))}
-                onValueChange={(value) => onLocaleChange(value as Locale)}
+                value={localePreference}
+                options={LOCALE_PREFERENCES.map((value) => ({
+                  value,
+                  label: t(`locale.${value}` as const),
+                }))}
+                onValueChange={(value) => onLocaleChange(value as LocalePreference)}
               />
               <p className="panel__hint">{t("settings.languageHint")}</p>
               <p className="panel__hint">{t("home.localContract")}</p>

@@ -45,13 +45,15 @@ import { isTextEditingTarget } from "./keyboard";
 import { useSlideKeyboardNavigation } from "./useSlideKeyboardNavigation";
 import { IconButton } from "../ui/IconButton";
 import { Menu, type MenuItem } from "../ui/Menu";
-import type { Translate } from "../i18n";
+import type { LocalePreference, Translate } from "../i18n";
 
 /** Lo único del host que el editor anuncia: si el cambio llegó al disco. */
 export type SaveState = "idle" | "saving" | "saved" | "failed" | "conflict";
 
 export interface EditorProps {
   t: Translate;
+  localePreference?: LocalePreference;
+  onLocaleChange?(locale: LocalePreference): void;
   source: DeksDocument;
   persistence: EditorPersistence;
   saveState: SaveState;
@@ -74,7 +76,17 @@ type MenuState =
   | { kind: "element"; elementId: string; point: { x: number; y: number } }
   | { kind: "slide"; slideId: string; point: { x: number; y: number } };
 
-export function Editor({ t, source, persistence, saveState, assets, onImportAsset, onExit }: EditorProps) {
+export function Editor({
+  t,
+  localePreference = "system",
+  onLocaleChange = () => undefined,
+  source,
+  persistence,
+  saveState,
+  assets,
+  onImportAsset,
+  onExit,
+}: EditorProps) {
   const { document: deck, dispatch, pending, conflict, undo, redo, canUndo, canRedo } = useEditorDocument(source, persistence);
   const assetUrls = useAssetUrls(deck, assets);
   const [preferences, setPreference] = useEditorPreferences();
@@ -155,7 +167,7 @@ export function Editor({ t, source, persistence, saveState, assets, onImportAsse
   const run = (operation: DeksCommand | readonly DeksCommand[]) => { void dispatch(operation); };
 
   const insert = (kind: InsertableKind) => {
-    const { element, state } = createElement(deck, slide.id, kind);
+    const { element, state } = createElement(deck, slide.id, kind, t);
     // Definir la identidad y darle su primer checkpoint es una sola revisión:
     // un elemento sin estado no existiría en ninguna slide.
     void dispatch([
@@ -181,7 +193,7 @@ export function Editor({ t, source, persistence, saveState, assets, onImportAsse
     try {
       const asset = await onImportAsset();
       if (!asset) return;
-      const { element, state } = createImageElement(deck, slide.id, asset);
+      const { element, state } = createImageElement(deck, slide.id, asset, t);
       const ok = await dispatch([
         { type: "define-asset", asset: { id: asset.id, kind: "embedded", mediaType: asset.mediaType, ...(asset.originalFilename ? { originalFilename: asset.originalFilename } : {}) } },
         { type: "define-element", element },
@@ -411,10 +423,12 @@ export function Editor({ t, source, persistence, saveState, assets, onImportAsse
       {settings && (
         <EditorSettings
           t={t}
+          localePreference={localePreference}
           preferences={preferences}
           motionBeatMs={deck.motionBeatMs}
           disabled={pending}
           onPreferenceChange={setPreference}
+          onLocaleChange={onLocaleChange}
           onMotionBeatChange={(motionBeatMs) => run({ type: "update-document", patch: { motionBeatMs } })}
           onClose={() => setSettings(false)}
         />

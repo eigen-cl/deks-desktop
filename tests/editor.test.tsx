@@ -22,7 +22,7 @@ vi.mock("@deks-js/renderer-core", () => ({
   },
 }));
 
-function setup(document: DeksDocument = createPresentation("Deck", { width: 1600, height: 900 }, "deck")) {
+function setup(document: DeksDocument = createPresentation("Deck", { width: 1600, height: 900 }, "deck", undefined, "Inicio")) {
   const saved: DeksDocument[] = [];
   const persistence = {
     save: async (_revision: number, next: DeksDocument) => {
@@ -49,7 +49,7 @@ function setup(document: DeksDocument = createPresentation("Deck", { width: 1600
 }
 
 function presentationWithThreeSlides(): DeksDocument {
-  const first = createPresentation("Deck", { width: 1600, height: 900 }, "deck");
+  const first = createPresentation("Deck", { width: 1600, height: 900 }, "deck", undefined, "Inicio");
   const second = createSlide(first, "Dos");
   const third = createSlide(first, "Tres");
   return applyDeksCommands(first, [
@@ -70,11 +70,56 @@ async function pickOption(user: ReturnType<typeof userEvent.setup>, label: strin
 beforeEach(() => rendered.mockClear());
 
 describe("editor de escritorio", () => {
+  it("cambia la preferencia global de idioma desde los ajustes del editor", async () => {
+    const user = userEvent.setup();
+    const onLocaleChange = vi.fn();
+    const source = createPresentation("Deck", { width: 1600, height: 900 }, "deck", undefined, "Start");
+    render(
+      <Editor
+        t={translator("en")}
+        localePreference="en"
+        onLocaleChange={onLocaleChange}
+        source={source}
+        persistence={{ save: async (_revision, next) => next }}
+        saveState="idle"
+        assets={[]}
+        onImportAsset={async () => undefined}
+        onExit={() => undefined}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Editor settings" }));
+    await pickOption(user, "Language", "System");
+    expect(onLocaleChange).toHaveBeenCalledWith("system");
+  }, 10_000);
+
+  it("localiza el contenido inicial que crea la interfaz sin traducir contratos", async () => {
+    const user = userEvent.setup();
+    const source = createPresentation("Deck", { width: 1600, height: 900 }, "deck", undefined, "Start");
+    const saved: DeksDocument[] = [];
+    render(
+      <Editor
+        t={translator("en")}
+        source={source}
+        persistence={{ save: async (_revision, next) => { saved.push(next); return next; } }}
+        saveState="idle"
+        assets={[]}
+        onImportAsset={async () => undefined}
+        onExit={() => undefined}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Text" }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+    expect(saved[0]!.elements[0]).toMatchObject({ kind: "text", name: "Text" });
+    expect(saved[0]!.slides[0]!.states[0]).toMatchObject({ content: "New text" });
+  });
+
   it("recorre las slides con las flechas izquierda y derecha sin sobrepasar los límites", () => {
     setup(presentationWithThreeSlides());
-    const first = screen.getByRole("button", { name: "Slide 1: Inicio" });
-    const second = screen.getByRole("button", { name: "Slide 2: Dos" });
-    const third = screen.getByRole("button", { name: "Slide 3: Tres" });
+    const first = screen.getByRole("button", { name: "Diapositiva 1: Inicio" });
+    const second = screen.getByRole("button", { name: "Diapositiva 2: Dos" });
+    const third = screen.getByRole("button", { name: "Diapositiva 3: Tres" });
 
     fireEvent.keyDown(window, { key: "ArrowLeft" });
     expect(first).toHaveAttribute("aria-current", "true");
@@ -92,7 +137,7 @@ describe("editor de escritorio", () => {
 
   it("no cambia de slide mientras se edita un input, textarea, select o contenteditable", () => {
     setup(presentationWithThreeSlides());
-    const first = screen.getByRole("button", { name: "Slide 1: Inicio" });
+    const first = screen.getByRole("button", { name: "Diapositiva 1: Inicio" });
     const targets = [
       document.createElement("input"),
       document.createElement("textarea"),
@@ -110,7 +155,7 @@ describe("editor de escritorio", () => {
   it("deja las flechas exclusivamente en manos de Presenter mientras está activo", async () => {
     const user = userEvent.setup();
     setup(presentationWithThreeSlides());
-    const first = screen.getByRole("button", { name: "Slide 1: Inicio" });
+    const first = screen.getByRole("button", { name: "Diapositiva 1: Inicio" });
 
     await user.click(screen.getByRole("button", { name: "Presentar" }));
     const stage = await screen.findByRole("dialog", { name: "Deck" });
@@ -168,24 +213,24 @@ describe("editor de escritorio", () => {
     const user = userEvent.setup();
     const { saved } = setup();
 
-    await user.click(screen.getByRole("button", { name: "Slide vacía" }));
+    await user.click(screen.getByRole("button", { name: "Diapositiva vacía" }));
     await waitFor(() => expect(saved.at(-1)!.slides).toHaveLength(2));
 
-    await user.click(screen.getByRole("button", { name: "Duplicar slide" }));
+    await user.click(screen.getByRole("button", { name: "Duplicar diapositiva" }));
     await waitFor(() => expect(saved.at(-1)!.slides).toHaveLength(3));
 
-    await user.click(screen.getByRole("button", { name: "Eliminar slide" }));
+    await user.click(screen.getByRole("button", { name: "Eliminar diapositiva" }));
     await waitFor(() => expect(saved.at(-1)!.slides).toHaveLength(2));
   });
 
   it("reordena las slides desde el teclado", async () => {
     const user = userEvent.setup();
     const { saved } = setup();
-    await user.click(screen.getByRole("button", { name: "Slide vacía" }));
+    await user.click(screen.getByRole("button", { name: "Diapositiva vacía" }));
     await waitFor(() => expect(saved.at(-1)!.slides).toHaveLength(2));
 
     const first = saved.at(-1)!.slides[0]!.id;
-    screen.getByRole("button", { name: "Arrastrar la slide 2" }).focus();
+    screen.getByRole("button", { name: "Arrastrar la diapositiva 2" }).focus();
     await user.keyboard("{ArrowUp}");
     await waitFor(() => expect(saved.at(-1)!.slides[1]!.id).toBe(first));
   });
@@ -196,7 +241,7 @@ describe("editor de escritorio", () => {
     await user.click(screen.getByRole("button", { name: "Rectángulo" }));
     await waitFor(() => expect(saved).toHaveLength(1));
 
-    await user.click(await screen.findByRole("button", { name: "Quitar de esta slide" }));
+    await user.click(await screen.findByRole("button", { name: "Quitar de esta diapositiva" }));
     await waitFor(() => {
       const last = saved.at(-1)!;
       expect(last.slides[0]!.states).toHaveLength(0);
@@ -410,11 +455,11 @@ describe("inventario de elementos", () => {
 
     await user.click(screen.getByRole("button", { name: "Rectángulo" }));
     await waitFor(() => expect(saved).toHaveLength(1));
-    await user.click(screen.getByRole("button", { name: "Slide vacía" }));
+    await user.click(screen.getByRole("button", { name: "Diapositiva vacía" }));
     await waitFor(() => expect(saved.at(-1)!.slides).toHaveLength(2));
 
     await user.click(screen.getByRole("tab", { name: "Elementos" }));
-    await user.click(screen.getByRole("button", { name: "Agregar «Rectángulo» a esta slide" }));
+    await user.click(screen.getByRole("button", { name: "Agregar «Rectángulo» a esta diapositiva" }));
 
     await waitFor(() => {
       const last = saved.at(-1)!;
@@ -432,7 +477,7 @@ describe("movimiento de la slide", () => {
 
     // Sin declaración propia, los campos muestran lo que resuelve el documento.
     expect(screen.getByText("Heredado del documento")).toBeInTheDocument();
-    const duration = screen.getByLabelText("Duración (beats)");
+    const duration = screen.getByLabelText("Duración (pulsos)");
     expect(duration).toHaveValue("1");
 
     await user.clear(duration);
@@ -445,14 +490,14 @@ describe("movimiento de la slide", () => {
       expect(slide.motion?.in?.easing).toBeUndefined();
       expect(slide.motion?.out).toBeUndefined();
     });
-    expect(await screen.findByText("Declarado en esta slide")).toBeInTheDocument();
+    expect(await screen.findByText("Declarado en esta diapositiva")).toBeInTheDocument();
   });
 
   it("vuelve a heredar al limpiar el rol declarado", async () => {
     const user = userEvent.setup();
     const { saved } = setup();
 
-    const duration = screen.getByLabelText("Duración (beats)");
+    const duration = screen.getByLabelText("Duración (pulsos)");
     await user.clear(duration);
     await user.type(duration, "3{Enter}");
     await waitFor(() => expect(saved.at(-1)!.slides[0]!.motion?.in?.durationBeats).toBe(3));
@@ -542,11 +587,11 @@ describe("navegación entre slides", () => {
   it("conserva la pestaña del inspector al cambiar de slide", async () => {
     const user = userEvent.setup();
     const { saved } = setup();
-    await user.click(screen.getByRole("button", { name: "Slide vacía" }));
+    await user.click(screen.getByRole("button", { name: "Diapositiva vacía" }));
     await waitFor(() => expect(saved.at(-1)!.slides).toHaveLength(2));
 
     await user.click(screen.getByRole("tab", { name: "Elementos" }));
-    await user.click(screen.getByRole("button", { name: /Slide 1:/ }));
+    await user.click(screen.getByRole("button", { name: /Diapositiva 1:/ }));
 
     // Cambiar de slide no puede devolver el panel a otra pestaña: se estaba
     // mirando el inventario para llevar un elemento de una slide a otra.

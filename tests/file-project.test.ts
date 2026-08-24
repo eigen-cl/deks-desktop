@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { applyDeksCommands, createDeksFile, readDeksFile, type DeksDocument } from "@deks-js/document";
 import { createPresentation } from "../src/model";
 
-const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
+const { invoke, open } = vi.hoisted(() => ({ invoke: vi.fn(), open: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open }));
 
-import { openProject, saveProject } from "../src/desktop-api";
+import { chooseImage, openProject, saveProject, setLocale } from "../src/desktop-api";
 
 const PNG = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAEAQH/6WQzgAAAAABJRU5ErkJggg=="), (character) => character.charCodeAt(0));
 const SVG_SOURCE = new Uint8Array([...new TextEncoder().encode('<svg height="50" width="100" xmlns="http://www.w3.org/2000/svg"><path fill="#fff" d="M0 0 L100 50 Z"/></svg>')]);
@@ -23,7 +23,24 @@ async function packagedDocument(): Promise<{ document: DeksDocument; bytes: Uint
 }
 
 describe("proyecto Desktop file-first", () => {
-  beforeEach(() => invoke.mockReset());
+  beforeEach(() => {
+    invoke.mockReset();
+    open.mockReset();
+  });
+
+  it("persiste system como preferencia y localiza el filtro del selector de imágenes", async () => {
+    invoke.mockResolvedValue(undefined);
+    open.mockResolvedValue(undefined);
+
+    await setLocale("system");
+    await chooseImage("Agregar imagen", "Imágenes");
+
+    expect(invoke).toHaveBeenCalledWith("set_locale", { locale: "system" });
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Agregar imagen",
+      filters: [{ name: "Imágenes", extensions: ["png", "jpg", "jpeg", "gif", "webp", "svg"] }],
+    }));
+  });
 
   it("abre un .deks con el documento y los bytes incrustados", async () => {
     const fixture = await packagedDocument();

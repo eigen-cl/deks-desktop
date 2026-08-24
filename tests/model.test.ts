@@ -21,6 +21,19 @@ describe("createPresentation", () => {
   it("usa panorámica cuando no se pide un tamaño", () => {
     expect(createPresentation("Sin tamaño").canvas).toEqual({ width: 1920, height: 1080 });
   });
+
+  it("recibe el nombre localizado de la primera diapositiva sin cambiar el contrato", () => {
+    const presentation = createPresentation(
+      "Launch",
+      { width: 1920, height: 1080 },
+      "presentation-en",
+      undefined,
+      "Start",
+    );
+
+    expect(presentation.slides[0]?.name).toBe("Start");
+    expect(presentation.format).toBe("deks");
+  });
 });
 
 describe("backgroundCss", () => {

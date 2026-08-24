@@ -149,6 +149,7 @@ export function createPresentation(
   canvas: { width: number; height: number } = { width: 1920, height: 1080 },
   id: string = crypto.randomUUID(),
   palette: Record<PaletteKey, string> = { ...DEFAULT_PALETTE },
+  initialSlideName = "Start",
 ): DeksDocument {
   const presentation = new DeksPresentation({
     id,
@@ -157,7 +158,7 @@ export function createPresentation(
     palette,
     motionBeatMs: 600,
   });
-  presentation.addSlide({ name: "Inicio" });
+  presentation.addSlide({ name: initialSlideName });
   const document = presentation.toDocument();
   assertDeksDocument(document);
   return document;

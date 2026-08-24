@@ -4,6 +4,7 @@ import type {
   DeksElementState,
   DeksSlide,
 } from "@deks-js/document";
+import { DEFAULT_LOCALE, translator, type Translate } from "../i18n";
 
 /**
  * Proyección efímera del editor: identidad y checkpoint juntos, que es como se
@@ -59,6 +60,7 @@ export function createElement(
   document: DeksDocument,
   slideId: string,
   kind: InsertableKind,
+  t: Translate = translator(DEFAULT_LOCALE),
 ): { element: DeksElement; state: DeksElementState } {
   const { width, height } = document.canvas;
   const elementId = id("element");
@@ -73,11 +75,11 @@ export function createElement(
 
   if (kind === "text") {
     return {
-      element: { id: elementId, kind: "text", name: "Texto", isLocked: false },
+      element: { id: elementId, kind: "text", name: t("default.textName"), isLocked: false },
       state: {
         ...base,
         ...box(0.7, 0.18),
-        content: "Nuevo texto",
+        content: t("default.textContent"),
         fill: document.palette.text,
         fontFamily: "Poppins",
         fontSize: Math.round(height * 0.07),
@@ -95,7 +97,7 @@ export function createElement(
       element: {
         id: elementId,
         kind: "number",
-        name: "Número",
+        name: t("default.numberName"),
         // Contar al entrar y al cambiar es el caso común de una cifra que
         // argumenta; salir contando hasta cero es el raro.
         animateMagnitude: { in: true, morph: true, out: false },
@@ -125,7 +127,7 @@ export function createElement(
   if (kind === "icon") {
     const side = Math.round(Math.min(width, height) * 0.16);
     return {
-      element: { id: elementId, kind: "icon", name: "Ícono", isLocked: false },
+      element: { id: elementId, kind: "icon", name: t("default.iconName"), isLocked: false },
       state: {
         ...base,
         width: side,
@@ -144,7 +146,7 @@ export function createElement(
   // web rechaza al abrirlo. `line` además exige relleno sólido.
   if (kind === "line") {
     return {
-      element: { id: elementId, kind: "shape", shapeKind: "line", name: "Línea", isLocked: false },
+      element: { id: elementId, kind: "shape", shapeKind: "line", name: t("default.lineName"), isLocked: false },
       state: {
         ...base,
         ...box(0.4, 0.01),
@@ -160,7 +162,7 @@ export function createElement(
       id: elementId,
       kind: "shape",
       shapeKind,
-      name: shapeKind === "ellipse" ? "Elipse" : "Rectángulo",
+      name: t(shapeKind === "ellipse" ? "default.ellipseName" : "default.rectangleName"),
       isLocked: false,
     },
     state: {
@@ -184,6 +186,7 @@ export function createImageElement(
   document: DeksDocument,
   slideId: string,
   asset: ImportedAsset,
+  t: Translate = translator(DEFAULT_LOCALE),
 ): { element: DeksElement; state: DeksElementState } {
   const { width, height } = document.canvas;
   const elementId = id("element");
@@ -193,7 +196,7 @@ export function createImageElement(
     element: {
       id: elementId,
       kind: "image",
-      name: asset.originalFilename ?? "Imagen",
+      name: asset.originalFilename ?? t("default.imageName"),
       isLocked: false,
     },
     state: {
@@ -206,7 +209,7 @@ export function createImageElement(
       opacity: 1,
       zIndex: nextZIndex(document, slideId),
       assetId: asset.id,
-      alt: asset.originalFilename ?? "Imagen",
+      alt: asset.originalFilename ?? t("default.imageName"),
       fit: "contain",
     },
   };

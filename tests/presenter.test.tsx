@@ -131,7 +131,7 @@ describe("Presenter con el renderer canónico", () => {
 
     // Este stage lo monta RendererCore; Presenter no tiene un renderer paralelo.
     expect(document.querySelector("[data-deks-stage]")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Slide siguiente" }));
+    await user.click(screen.getByRole("button", { name: "Diapositiva siguiente" }));
     await waitFor(() => expect(animations).toHaveLength(2));
 
     const track = animations.find(({ elementId }) => elementId === "story-progress-track")!;

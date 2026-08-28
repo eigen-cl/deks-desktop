@@ -420,6 +420,16 @@ export function App() {
     <main className="workspace">
       {updateBanner}
       {error && <aside className="workspace-error" role="alert">{error}</aside>}
+      {project.warnings.length > 0 && (
+        <aside className="migration-banner" role="status">
+          <span>{t("codec.migratedWithWarnings", { count: project.warnings.length })}</span>
+          <button
+            type="button"
+            aria-label={t("codec.dismissWarnings")}
+            onClick={() => setProject((current) => current ? { ...current, warnings: [] } : current)}
+          ><X aria-hidden="true" /></button>
+        </aside>
+      )}
       <Editor
         t={t}
         localePreference={localePreference}

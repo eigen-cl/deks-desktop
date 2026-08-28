@@ -1,4 +1,4 @@
-import { Circle, Image, Lock, Minus, Plus, Sparkles, Square, Type } from "lucide-react";
+import { Circle, Diamond, Image, Lock, Minus, Plus, Sparkles, Square, Type } from "lucide-react";
 import type { DeksDocument } from "@deks-js/document";
 import { editorElements, elementsElsewhere, type EditorElement } from "./elements";
 import type { Translate } from "../i18n";
@@ -92,7 +92,9 @@ function KindIcon({ element }: { element: EditorElement }) {
       ? Image
       : element.kind === "icon"
         ? Sparkles
-        : element.shapeKind === "ellipse"
+        : element.shapeKind === "diamond"
+          ? Diamond
+          : element.shapeKind === "ellipse"
           ? Circle
           : element.shapeKind === "line"
             ? Minus

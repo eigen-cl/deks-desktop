@@ -7,7 +7,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open }));
 
-import { chooseImage, openProject, saveProject, setLocale } from "../src/desktop-api";
+import { chooseImage, migrateLegacyProject, openProject, saveProject, setLocale } from "../src/desktop-api";
 
 const PNG = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAEAQH/6WQzgAAAAABJRU5ErkJggg=="), (character) => character.charCodeAt(0));
 const SVG_SOURCE = new Uint8Array([...new TextEncoder().encode('<svg height="50" width="100" xmlns="http://www.w3.org/2000/svg"><path fill="#fff" d="M0 0 L100 50 Z"/></svg>')]);
@@ -51,6 +51,43 @@ describe("proyecto Desktop file-first", () => {
     expect(opened.document).toEqual(fixture.document);
     expect(opened.assets[0]!.bytes).toEqual(PNG);
     expect(invoke).toHaveBeenCalledWith("read_deks_file", { path: "/decks/portable.deks" });
+  });
+
+  it("conserva los warnings estructurados al empaquetar una carpeta v1 como .deks v2", async () => {
+    const v1 = structuredClone(createPresentation("Legacy", { width: 1600, height: 900 }, "legacy")) as any;
+    delete v1.codecVersion;
+    v1.elements = [{ id: "title", kind: "text", name: "Title", isLocked: false }];
+    const state = {
+      elementId: "title", x: 10, y: 20, width: 400, height: 100,
+      rotationDeg: 0, opacity: 1, zIndex: 1,
+      content: "First", fontFamily: "Poppins",
+      horizontalAlignment: "left", verticalAlignment: "top", overflowMode: "visible",
+      fontSize: 48, fontWeight: 600, lineHeight: 1.1, letterSpacing: 0, fill: "#ffffff",
+    };
+    v1.slides = [
+      { ...v1.slides[0], id: "first", states: [state] },
+      { ...v1.slides[0], id: "second", states: [{ ...state, content: "Second" }] },
+    ];
+    invoke.mockImplementation(async (command, payload: any) => {
+      if (command === "open_project") return { path: payload.path, document: v1 };
+      if (command === "migrate_legacy_folder") {
+        return { path: "/decks/legacy.deks", bytes: payload.bytes, fingerprint: "migrated" };
+      }
+      throw new Error(`unexpected command ${command}`);
+    });
+
+    const opened = await migrateLegacyProject("/decks/legacy-folder");
+
+    expect(opened.document.codecVersion).toBe(2);
+    expect(opened.document.elements[0]).toMatchObject({ content: "First" });
+    expect(opened.warnings).toEqual([
+      expect.objectContaining({
+        code: "text-identity-conflict",
+        field: "content",
+        chosenSlideId: "first",
+        ignored: [expect.objectContaining({ slideId: "second" })],
+      }),
+    ]);
   });
 
   it("reempaca todos los assets y entrega la huella abierta al CAS de Rust", async () => {

@@ -118,6 +118,15 @@ satisfy this invariant. Preserve identity only when the string itself is unchang
 A changing magnitude is different: model it as one persistent `number` identity so
 the value counts without replacing the element.
 
+Use this minimal decision test before authoring any text edge:
+
+- Same phrase and content, now larger or elsewhere → same identity and `morph`.
+- New phrase, claim or label, even in the same rectangle → new identity; old `out`,
+  clean interval, new `in`.
+
+For example, `The problem` becoming a larger `The problem` title continues. `The
+problem` being replaced by `The proposal` does not: the two claims need two IDs.
+
 ## How to animate text
 
 Choose the text motion from the event. Use `crop` when text arrives inside a fixed

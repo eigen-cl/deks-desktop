@@ -7,6 +7,7 @@ import {
   createDeksFile,
   DEKS_IMAGE_LIMITS,
   inspectAndNormalizeDeksImage,
+  migrateDeksDocument,
   normalizeDeksFileAssets,
   readDeksFile,
   sniffDeksImageMediaType,
@@ -187,8 +188,7 @@ export class ProjectStore {
     const canonical = await realpath(projectPath);
     assertInside(this.#root, canonical);
     const documentPath = join(canonical, LEGACY_DOCUMENT_FILE);
-    const document = JSON.parse(await readFile(documentPath, "utf8"));
-    assertDeksDocument(document);
+    const { document } = migrateDeksDocument(JSON.parse(await readFile(documentPath, "utf8")));
     const assets = [];
     for (const descriptor of document.assets ?? []) {
       if (descriptor.kind !== "embedded") continue;

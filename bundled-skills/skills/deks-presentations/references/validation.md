@@ -6,10 +6,17 @@ rules turns a class of failed writes into edits you never send.
 
 ## Structural invariants
 
-- `format` is exactly `"deks"`; every root key must be present and no unknown key is allowed.
+- `format` is exactly `"deks"` and canonical documents require
+  `codecVersion: 2`; every root key must be present and no unknown key is allowed.
+  An absent version or `codecVersion: 1` is decoded as v1 and migrated first;
+  future versions are rejected. The v1 → v2 migration uses the first state in
+  slide order for fixed text identity fields and may return non-blocking conflict
+  warnings.
 - `revision` is a non-negative integer maintained by the host.
 - Every object rejects unknown properties. An element state rejects identity fields
   (`id`, `kind`, `name`, `shapeKind`, `semanticRole`, `parentId`, `isLocked`) outright.
+  A text state also rejects `content`, `fontFamily`, `horizontalAlignment`,
+  `verticalAlignment` and `overflowMode`: v2 requires them once on its text identity.
 - IDs match `^[A-Za-z0-9][A-Za-z0-9._-]*$`. Element and asset IDs allow up to 256 code points,
   the document ID up to 128.
 - Text rejects control characters and unpaired Unicode surrogates.
@@ -35,6 +42,12 @@ rules turns a class of failed writes into edits you never send.
 - Reordering slides requires the complete list, every existing slide exactly once.
 - `animateMagnitude` is required on a `number` identity — all three roles, always — and
   invalid on every other kind. `shapeKind` is required on a `shape` and invalid elsewhere.
+- `shapeKind` is one of `rectangle`, `ellipse`, `line` or `diamond`.
+- `anchor` is optional. When present it contains exactly both `x` and `y`, each in
+  `0..1`; a partial anchor is invalid. Omission preserves the legacy top-left pivot.
+- Text `padding` is optional and state-owned. When present it contains exactly
+  `top`, `right`, `bottom` and `left`, all four required and non-negative. Omission
+  means four zeros. It is invalid on non-text states.
 - `groupSeparator` must differ from `decimalSeparator` unless it is empty.
 - A `line` shape must use a solid `shapeFill`. `cornerRadii` is valid only on a `rectangle`.
 - A `link-button` `url` and a remote asset `url` must be absolute, credential-free HTTPS.
@@ -51,6 +64,7 @@ Portable document bounds, enforced by every host:
 | `canvas.height` | integer 180 – 16384 |
 | canvas aspect ratio | between 1:4 and 4:1 |
 | `x`, `y` | ±100 000 |
+| `anchor.x`, `anchor.y` | 0 – 1 when `anchor` is present; both required together |
 | `width`, `height` | 0.1 – 100 000 |
 | `rotationDeg` | ±36 000 |
 | `opacity` | 0 – 1 |
@@ -59,6 +73,7 @@ Portable document bounds, enforced by every host:
 | `fontWeight` | integer 1 – 1000 |
 | `lineHeight` | 0.1 – 100 |
 | `letterSpacing` | ±1000 |
+| `padding.top`, `.right`, `.bottom`, `.left` | 0 – 100 000 when `padding` is present; all four required |
 | `strokeWidth` | 0 – 1000 (an `icon` narrows this to 0.5 – 8) |
 | `cornerRadius`, each of `cornerRadii` | 0 – 100 000 |
 | `motionBeatMs` | integer 50 – 60 000 |

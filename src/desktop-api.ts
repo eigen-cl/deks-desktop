@@ -10,7 +10,7 @@ import {
   type DeksDocument,
   type DeksFileAsset,
 } from "@deks-js/document";
-import { toCanonicalDocument } from "./legacy-document";
+import { toCanonicalDocumentResult } from "./legacy-document";
 import type { ImportedAsset } from "./editor/elements";
 import type { LocalePreference } from "./i18n";
 import type {
@@ -109,6 +109,7 @@ async function decodeHostFile(record: HostDeksBytes): Promise<OpenProject> {
     // Core validates every packaged image and canonicalizes safe SVG bytes.
     assets: normalizeDeksFileAssets(archive.document, archive.assets),
     fingerprint: record.fingerprint,
+    warnings: archive.warnings,
   };
 }
 
@@ -155,7 +156,8 @@ export async function saveProject(
  */
 export async function migrateLegacyProject(path: string): Promise<OpenProject> {
   const legacy = await invoke<LegacyProject>("open_project", { path });
-  const document = toCanonicalDocument(legacy.document);
+  const migration = toCanonicalDocumentResult(legacy.document);
+  const document = migration.document;
   const assets: DeksFileAsset[] = [];
   for (const descriptor of document.assets) {
     if (descriptor.kind !== "embedded") continue;
@@ -179,7 +181,10 @@ export async function migrateLegacyProject(path: string): Promise<OpenProject> {
   if (JSON.stringify(reopened.document) !== JSON.stringify(document)) {
     throw new Error("legacy_migration_verification_failed");
   }
-  return reopened;
+  return {
+    ...reopened,
+    warnings: [...migration.warnings, ...reopened.warnings],
+  };
 }
 
 export function readProjectCover(path: string): Promise<DeksDocument> {

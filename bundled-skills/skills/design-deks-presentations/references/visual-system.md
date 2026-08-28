@@ -33,11 +33,14 @@ Treat this mapping as adaptable guidance, not a universal cultural rule. Confirm
 ## Use visual assets intentionally
 
 - Query `list_assets` before asking for new media. Use existing workspace assets when relevant.
-- Ask the user to upload missing media in the DEKS web app; MCP does not upload assets.
+- In Cloud, call `upload_asset` only for a file the user explicitly attached,
+  then reuse its returned `id` as the image state's `asset_id`. If the user only mentions a file, local
+  path, or URL, ask for an explicit attachment and never invent access to it.
 - Query `list_icon_catalog` by meaning. Use one icon family unless a deliberate change conveys a new visual language.
 - Prefer native DEKS shapes and catalog-backed icons for vector artwork that must scale or animate
   without losing quality.
-- SVG is supported through the Web upload and Desktop `add_asset` paths up to 5
+- SVG is supported through Cloud `upload_asset`, Web upload, and Desktop
+  `add_asset` paths up to 5
   MB. Admission parses it into DEKS's canonical static subset: no scripts/events,
   CSS, fonts or `<text>`, `foreignObject`, nested `<image>`, `<use>`, SMIL, extra
   namespaces, declarations/entities/processing instructions, or remote/data

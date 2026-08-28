@@ -1,9 +1,10 @@
-import type { DeksDocument, DeksElementState, DeksSlide, SlideBackground } from "@deks-js/document";
+import { resolveElementMotion, type Anchor, type DeksDocument, type DeksElement, type DeksElementState, type DeksSlide, type SlideBackground } from "@deks-js/document";
 import { Lock, LockOpen, Trash2 } from "lucide-react";
 import { clampOpacity, type EditorElement } from "./elements";
 import { ElementList } from "./ElementList";
 import { ColorField, NumberField, SelectField, TextAreaField, TextField, Toggle } from "../ui/fields";
 import type { Translate } from "../i18n";
+import { LucideIconPicker } from "./LucideIconPicker";
 
 export type InspectorTab = "slide" | "element" | "elements";
 
@@ -19,20 +20,21 @@ export interface InspectorProps {
   onAddExisting(elementId: string, sourceSlideId: string): void;
   onPatchSlide(patch: Partial<Omit<DeksSlide, "id" | "states">>): void;
   onRenameElement(name: string): void;
+  onPatchIdentity(patch: Partial<Omit<DeksElement, "id" | "kind">>): void;
   onLockElement(isLocked: boolean): void;
   onAnimateMagnitude(animateMagnitude: { in: boolean; morph: boolean; out: boolean }): void;
+  onSetAnchor(anchor?: Anchor): void;
   onPatchState(patch: Partial<Omit<DeksElementState, "elementId">>): void;
   onRemoveFromSlide(): void;
   onDeleteEverywhere(): void;
 }
 
-const ICONS = [
-  "bot", "building-2", "cloud", "database", "eye", "file-text", "laptop",
-  "lock-keyhole", "network", "plug", "shield-check", "triangle-alert",
-  "user-round", "workflow",
-];
-
 const TABS: InspectorTab[] = ["slide", "element", "elements"];
+const ANCHOR_PRESETS: Anchor[] = [
+  { x: 0, y: 0 }, { x: 0.5, y: 0 }, { x: 1, y: 0 },
+  { x: 0, y: 0.5 }, { x: 0.5, y: 0.5 }, { x: 1, y: 0.5 },
+  { x: 0, y: 1 }, { x: 0.5, y: 1 }, { x: 1, y: 1 },
+];
 
 /**
  * Panel derecho. Sus tres vistas —la slide, el elemento y el inventario— viven
@@ -53,8 +55,10 @@ export function Inspector({
   onAddExisting,
   onPatchSlide,
   onRenameElement,
+  onPatchIdentity,
   onLockElement,
   onAnimateMagnitude,
+  onSetAnchor,
   onPatchState,
   onRemoveFromSlide,
   onDeleteEverywhere,
@@ -108,11 +112,14 @@ export function Inspector({
             <ElementProperties
               t={t}
               deck={deck}
+              slide={slide}
               element={selected}
               disabled={disabled}
               onRename={onRenameElement}
+              onPatchIdentity={onPatchIdentity}
               onLock={onLockElement}
               onAnimateMagnitude={onAnimateMagnitude}
+              onSetAnchor={onSetAnchor}
               onPatch={onPatchState}
               onRemoveFromSlide={onRemoveFromSlide}
               onDeleteEverywhere={onDeleteEverywhere}
@@ -220,33 +227,50 @@ function SlideProperties({
 function ElementProperties({
   t,
   deck,
+  slide,
   element,
   disabled,
   onRename,
+  onPatchIdentity,
   onLock,
   onAnimateMagnitude,
+  onSetAnchor,
   onPatch,
   onRemoveFromSlide,
   onDeleteEverywhere,
 }: {
   t: Translate;
   deck: DeksDocument;
+  slide: DeksSlide;
   element: EditorElement;
   disabled: boolean;
   onRename(name: string): void;
+  onPatchIdentity(patch: Partial<Omit<DeksElement, "id" | "kind">>): void;
   onLock(isLocked: boolean): void;
   /** Los toggles de conteo viven en la identidad, no en el estado de la slide. */
   onAnimateMagnitude(animateMagnitude: { in: boolean; morph: boolean; out: boolean }): void;
+  onSetAnchor(anchor?: Anchor): void;
   onPatch(patch: Partial<Omit<DeksElementState, "elementId">>): void;
   onRemoveFromSlide(): void;
   onDeleteEverywhere(): void;
 }) {
   const fill = element.shapeFill ?? { kind: "solid" as const, color: deck.palette.primary };
   const corner = element.cornerRadii?.topLeft ?? element.cornerRadius ?? 0;
+  const anchor = element.anchor ?? { x: 0, y: 0 };
+  const slideIndex = deck.slides.findIndex(({ id }) => id === slide.id);
+  const previous = deck.slides[slideIndex - 1];
+  const next = deck.slides[slideIndex + 1];
+  const continuesFromPrevious = previous?.states.some(({ elementId }) => elementId === element.id) ?? false;
+  const continuesToNext = next?.states.some(({ elementId }) => elementId === element.id) ?? false;
+  const resolvedMotion = resolveElementMotion(deck, slide.id, element.id);
+  const unreachableIncomingCrop = continuesFromPrevious && resolvedMotion.in.animation.kind === "crop";
+  const unreachableOutgoingCrop = continuesToNext && resolvedMotion.out.animation.kind === "crop";
 
   return (
     <>
-      <section className="panel">
+      <fieldset className="panel identity-properties">
+        <legend>{t("editor.identityScope")}</legend>
+        <p className="panel__hint" id={`identity-scope-${element.id}`}>{t("editor.identityScopeHint")}</p>
         <TextField label={t("editor.elementName")} value={element.name} disabled={disabled} onChange={onRename} />
         <button
           type="button"
@@ -257,7 +281,58 @@ function ElementProperties({
           {element.isLocked ? <LockOpen aria-hidden="true" /> : <Lock aria-hidden="true" />}
           {element.isLocked ? t("editor.unlock") : t("editor.lock")}
         </button>
-      </section>
+        {element.kind === "text" && (
+          <>
+            <TextAreaField
+              label={t("editor.content")}
+              value={element.content ?? ""}
+              disabled={disabled}
+              onChange={(content) => onPatchIdentity({ content })}
+            />
+            <SelectField
+              label={t("editor.fontFamily")}
+              value={element.fontFamily ?? "Poppins"}
+              disabled={disabled}
+              options={[{ value: "Poppins", label: "Poppins" }, { value: "Roboto", label: "Roboto" }]}
+              onValueChange={(fontFamily) => onPatchIdentity({ fontFamily: fontFamily as "Poppins" | "Roboto" })}
+            />
+            <SelectField
+              label={t("editor.align")}
+              value={element.horizontalAlignment ?? "left"}
+              disabled={disabled}
+              options={[
+                { value: "left", label: t("editor.alignLeft") },
+                { value: "center", label: t("editor.alignCenter") },
+                { value: "right", label: t("editor.alignRight") },
+                { value: "justify", label: t("editor.alignJustify") },
+              ]}
+              onValueChange={(horizontalAlignment) => onPatchIdentity({ horizontalAlignment: horizontalAlignment as DeksElement["horizontalAlignment"] })}
+            />
+            <SelectField
+              label={t("editor.verticalAlign")}
+              value={element.verticalAlignment ?? "middle"}
+              disabled={disabled}
+              options={[
+                { value: "top", label: t("editor.alignTop") },
+                { value: "middle", label: t("editor.alignMiddle") },
+                { value: "bottom", label: t("editor.alignBottom") },
+              ]}
+              onValueChange={(verticalAlignment) => onPatchIdentity({ verticalAlignment: verticalAlignment as DeksElement["verticalAlignment"] })}
+            />
+            <SelectField
+              label={t("editor.overflow")}
+              value={element.overflowMode ?? "hidden"}
+              disabled={disabled}
+              options={[
+                { value: "visible", label: t("editor.overflowVisible") },
+                { value: "hidden", label: t("editor.overflowHidden") },
+                { value: "clip", label: t("editor.overflowClip") },
+              ]}
+              onValueChange={(overflowMode) => onPatchIdentity({ overflowMode: overflowMode as DeksElement["overflowMode"] })}
+            />
+          </>
+        )}
+      </fieldset>
 
       <section className="panel">
         <h3>{t("editor.geometry")}</h3>
@@ -280,61 +355,70 @@ function ElementProperties({
           />
           <NumberField label={t("editor.zIndex")} value={element.zIndex} step={1} disabled={disabled} onCommit={(zIndex) => onPatch({ zIndex })} />
         </div>
+        <div className="anchor-field">
+          <span className="field__label">{t("editor.anchor")}</span>
+          <div className="anchor-presets" role="group" aria-label={t("editor.anchor")}>
+            {ANCHOR_PRESETS.map((preset) => {
+              const selected = anchor.x === preset.x && anchor.y === preset.y;
+              const position = preset.x === 0.5 && preset.y === 0.5
+                ? t("editor.anchorCenter")
+                : `${preset.y === 0 ? t("editor.anchorTop") : preset.y === 1 ? t("editor.anchorBottom") : t("editor.anchorMiddle")} ${preset.x === 0 ? t("editor.anchorLeft") : preset.x === 1 ? t("editor.anchorRight") : t("editor.anchorCenter")}`;
+              return (
+                <button
+                  key={`${preset.x}-${preset.y}`}
+                  type="button"
+                  aria-label={t("editor.anchorPreset", { position })}
+                  aria-pressed={selected}
+                  className={selected ? "is-active" : ""}
+                  disabled={disabled}
+                  onClick={() => onSetAnchor(preset.x === 0 && preset.y === 0 ? undefined : preset)}
+                ><span aria-hidden="true" /></button>
+              );
+            })}
+          </div>
+        </div>
       </section>
 
+      {unreachableIncomingCrop && (
+        <p role="status" className="panel__warning">
+          {t("motion.unreachableCropIn")}
+        </p>
+      )}
+      {unreachableOutgoingCrop && (
+        <p role="status" className="panel__warning">
+          {t("motion.unreachableCropOut")}
+        </p>
+      )}
+
       {element.kind === "text" && (
-        <section className="panel">
-          <h3>{t("editor.addText")}</h3>
-          <TextAreaField label={t("editor.content")} value={element.content ?? ""} disabled={disabled} onChange={(content) => onPatch({ content })} />
-          <SelectField
-            label={t("editor.fontFamily")}
-            value={element.fontFamily ?? "Poppins"}
-            disabled={disabled}
-            options={[{ value: "Poppins", label: "Poppins" }, { value: "Roboto", label: "Roboto" }]}
-            onValueChange={(fontFamily) => onPatch({ fontFamily: fontFamily as "Poppins" | "Roboto" })}
-          />
+        <fieldset className="panel">
+          <legend>{t("editor.slideStyleScope")}</legend>
           <div className="panel__grid">
             <NumberField label={t("editor.fontSize")} value={element.fontSize ?? 48} min={1} disabled={disabled} onCommit={(fontSize) => onPatch({ fontSize })} />
             <NumberField label={t("editor.fontWeight")} value={element.fontWeight ?? 600} min={100} max={900} step={100} disabled={disabled} onCommit={(fontWeight) => onPatch({ fontWeight })} />
             <NumberField label={t("editor.lineHeight")} value={element.lineHeight ?? 1.15} min={0.5} step={0.05} disabled={disabled} onCommit={(lineHeight) => onPatch({ lineHeight })} />
             <NumberField label={t("editor.letterSpacing")} value={element.letterSpacing ?? 0} step={0.5} disabled={disabled} onCommit={(letterSpacing) => onPatch({ letterSpacing })} />
           </div>
-          <SelectField
-            label={t("editor.align")}
-            value={element.horizontalAlignment ?? "left"}
-            disabled={disabled}
-            options={[
-              { value: "left", label: t("editor.alignLeft") },
-              { value: "center", label: t("editor.alignCenter") },
-              { value: "right", label: t("editor.alignRight") },
-              { value: "justify", label: t("editor.alignJustify") },
-            ]}
-            onValueChange={(value) => onPatch({ horizontalAlignment: value as DeksElementState["horizontalAlignment"] })}
-          />
-          <SelectField
-            label={t("editor.verticalAlign")}
-            value={element.verticalAlignment ?? "middle"}
-            disabled={disabled}
-            options={[
-              { value: "top", label: t("editor.alignTop") },
-              { value: "middle", label: t("editor.alignMiddle") },
-              { value: "bottom", label: t("editor.alignBottom") },
-            ]}
-            onValueChange={(value) => onPatch({ verticalAlignment: value as DeksElementState["verticalAlignment"] })}
-          />
-          <SelectField
-            label={t("editor.overflow")}
-            value={element.overflowMode ?? "hidden"}
-            disabled={disabled}
-            options={[
-              { value: "visible", label: t("editor.overflowVisible") },
-              { value: "hidden", label: t("editor.overflowHidden") },
-              { value: "clip", label: t("editor.overflowClip") },
-            ]}
-            onValueChange={(value) => onPatch({ overflowMode: value as DeksElementState["overflowMode"] })}
-          />
           <ColorField label={t("editor.color")} value={element.fill ?? deck.palette.text} disabled={disabled} onCommit={(value) => onPatch({ fill: value })} />
-        </section>
+          <fieldset className="padding-fields">
+            <legend>{t("editor.padding")}</legend>
+            <div className="panel__grid">
+              {(["top", "right", "bottom", "left"] as const).map((side) => (
+                <NumberField
+                  key={side}
+                  label={t(`editor.padding.${side}` as const)}
+                  value={element.padding?.[side] ?? 0}
+                  min={0}
+                  step={1}
+                  disabled={disabled}
+                  onCommit={(value) => onPatch({
+                    padding: { top: 0, right: 0, bottom: 0, left: 0, ...element.padding, [side]: value },
+                  })}
+                />
+              ))}
+            </div>
+          </fieldset>
+        </fieldset>
       )}
 
       {element.kind === "shape" && (
@@ -461,13 +545,7 @@ function ElementProperties({
       {element.kind === "icon" && (
         <section className="panel">
           <h3>{t("editor.icon")}</h3>
-          <SelectField
-            label={t("editor.icon")}
-            value={element.iconName ?? "shield-check"}
-            disabled={disabled}
-            options={ICONS.map((name) => ({ value: name, label: name }))}
-            onValueChange={(iconName) => onPatch({ iconName })}
-          />
+          <LucideIconPicker t={t} value={element.iconName ?? "shield-check"} disabled={disabled} onValueChange={(iconName) => onPatch({ iconName })} />
           <ColorField label={t("editor.color")} value={element.fill ?? deck.palette.secondary} disabled={disabled} onCommit={(value) => onPatch({ fill: value })} />
           <NumberField label={t("editor.strokeWidth")} value={element.strokeWidth ?? 2} min={0.5} max={8} step={0.5} disabled={disabled} onCommit={(strokeWidth) => onPatch({ strokeWidth })} />
         </section>

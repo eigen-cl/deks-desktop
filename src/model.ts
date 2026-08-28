@@ -2,6 +2,7 @@ import {
   DeksPresentation,
   assertDeksDocument,
   type DeksDocument,
+  type DeksCodecWarning,
   type DeksFileAsset,
   type SlideBackground,
 } from "@deks-js/document";
@@ -11,6 +12,8 @@ export interface OpenProject {
   document: DeksDocument;
   assets: DeksFileAsset[];
   fingerprint: string;
+  /** Non-blocking deterministic choices made while opening a v1 file. */
+  warnings: DeksCodecWarning[];
 }
 
 /** Archivo descubierto por Rust sin interpretar su ZIP. */

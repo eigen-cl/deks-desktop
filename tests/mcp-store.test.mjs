@@ -8,6 +8,7 @@ import { ProjectStore } from "../mcp/project-store.mjs";
 
 const document = {
   format: "deks",
+  codecVersion: 2,
   id: "presentation-1",
   name: "Agent demo",
   revision: 0,
@@ -30,6 +31,12 @@ const document = {
     states: [],
   }],
 };
+
+function legacyV1Document(input = document) {
+  const legacy = structuredClone(input);
+  delete legacy.codecVersion;
+  return legacy;
+}
 
 const PNG_BYTES = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAEAQH/6WQzgAAAAABJRU5ErkJggg==", "base64");
 const OTHER_PNG_BYTES = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
@@ -313,16 +320,20 @@ test("legacy expanded folders remain readable and writable without being deleted
   const project = join(root, "legacy-project");
   await mkdir(join(project, "changes"), { recursive: true });
   await mkdir(join(project, "assets"));
-  await writeFile(join(project, "document.deks.json"), JSON.stringify(document));
+  await writeFile(join(project, "document.deks.json"), JSON.stringify(legacyV1Document()));
   const store = await ProjectStore.fromRoot(root);
-  assert.equal((await store.getPresentation(document.id)).name, document.name);
+  const migrated = await store.getPresentation(document.id);
+  assert.equal(migrated.name, document.name);
+  assert.equal(migrated.codecVersion, 2);
   await store.applyCommands({
     presentationId: document.id,
     expectedRevision: 0,
     idempotencyKey: "legacy-folder-1",
     commands: [{ type: "update-document", patch: { name: "Still compatible" } }],
   });
-  assert.equal(JSON.parse(await readFile(join(project, "document.deks.json"), "utf8")).name, "Still compatible");
+  const persisted = JSON.parse(await readFile(join(project, "document.deks.json"), "utf8"));
+  assert.equal(persisted.name, "Still compatible");
+  assert.equal(persisted.codecVersion, 2);
   assert.ok((await readdir(root)).includes("legacy-project"));
 });
 
@@ -330,7 +341,7 @@ test("a migrated .deks file takes precedence over its preserved legacy folder", 
   const root = await mkdtemp(join(tmpdir(), "deks-mcp-migrated-"));
   const legacy = join(root, "same-deck");
   await mkdir(legacy);
-  await writeFile(join(legacy, "document.deks.json"), JSON.stringify({ ...document, name: "Legacy copy" }));
+  await writeFile(join(legacy, "document.deks.json"), JSON.stringify(legacyV1Document({ ...document, name: "Legacy copy" })));
   await writeDeks(join(root, "same-deck.deks"), { ...document, name: "Portable copy", revision: 4 });
 
   const store = await ProjectStore.fromRoot(root);

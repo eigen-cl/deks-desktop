@@ -84,11 +84,12 @@ narration boundary, so two arguments blur into one.
   the same row or baseline should normally start together; stagger the bands in the
   intended reading direction. Split one band only when the content itself has a
   sequential relationship.
-- **A text rectangle is an exclusive temporal zone.** When a different string will
-  reuse any part of it, give the replacement a different identity and finish the
-  outgoing text before the incoming text begins. A shared text identity whose
-  content changes cross-fades both strings, so it cannot keep that zone clean;
-  preserve identity only while the string itself remains unchanged.
+- **A text rectangle is an exclusive temporal zone.** **Same phrase, same identity:**
+  preserve a text identity only while its `content` is unchanged. **New phrase,
+  claim or label means new identity:** sharing a role, style or rectangle does not
+  make replacement copy continuous. Finish the outgoing text before the incoming
+  text begins. Reusing one identity with changed `content` cross-fades both strings
+  and cannot keep that zone clean.
 - **Never animate re-layout.** A continuing element that shifts twelve pixels to
   balance the next composition is visible motion with no referent. Keep it on its
   anchor and arrange the local content around it.

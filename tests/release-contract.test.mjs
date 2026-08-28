@@ -41,8 +41,8 @@ test("the package contract enables native bundles and embeds only the five revie
     "deks-presentations",
     "design-deks-presentations",
   ]);
-  assert.equal(report.source.repository, "https://github.com/eigen-cl/deks-plugin");
-  assert.equal(report.source.version, "0.3.0");
+  assert.equal(report.source.repository, "https://github.com/eigen-cl/deks-desktop");
+  assert.equal(report.source.version, "0.11.0");
   for (const relativePath of report.files) {
     assert.equal((await lstat(join(new URL("bundled-skills/", root).pathname, relativePath))).isSymbolicLink(), false);
   }
@@ -56,9 +56,9 @@ test("the installed MCP payload is self-contained apart from documented Node and
   assert.deepEqual(
     Object.fromEntries(Object.entries(desktopPackageJson.dependencies).filter(([name]) => name.startsWith("@deks-js/"))),
     {
-      "@deks-js/document": "4.2.0",
-      "@deks-js/render-preview": "4.2.0",
-      "@deks-js/renderer-core": "4.2.0",
+      "@deks-js/document": "5.0.0",
+      "@deks-js/render-preview": "5.0.0",
+      "@deks-js/renderer-core": "5.0.0",
     },
   );
   assert.equal(packageJson.version, "0.3.0");
@@ -68,15 +68,15 @@ test("the installed MCP payload is self-contained apart from documented Node and
   assert.equal(packageJson.scripts.start, "node mcp/server.mjs");
   assert.equal(packageJson.scripts["install-browser"], "playwright install chromium");
   assert.deepEqual(packageJson.dependencies, {
-    "@deks-js/document": "4.2.0",
-    "@deks-js/render-preview": "4.2.0",
+    "@deks-js/document": "5.0.0",
+    "@deks-js/render-preview": "5.0.0",
     "playwright": "1.62.1",
   });
   for (const lock of [desktopPackageLock, packageLock]) {
     assert.doesNotMatch(JSON.stringify(lock), /file:|\.\.\/deks-core|artifacts\//);
-    assert.equal(lock.packages["node_modules/@deks-js/document"]?.version, "4.2.0");
-    assert.equal(lock.packages["node_modules/@deks-js/render-preview"]?.version, "4.2.0");
-    assert.equal(lock.packages["node_modules/@deks-js/renderer-core"]?.version, "4.2.0");
+    assert.equal(lock.packages["node_modules/@deks-js/document"]?.version, "5.0.0");
+    assert.equal(lock.packages["node_modules/@deks-js/render-preview"]?.version, "5.0.0");
+    assert.equal(lock.packages["node_modules/@deks-js/renderer-core"]?.version, "5.0.0");
   }
   const readme = await readFile(new URL("bundled-mcp/README.md", root), "utf8");
   const server = await readFile(new URL("mcp/server.mjs", root), "utf8");

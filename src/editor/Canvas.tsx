@@ -4,6 +4,14 @@ import { RendererCore } from "@deks-js/renderer-core";
 import type { DeksDocument } from "@deks-js/document";
 import { editorElements, type EditorElement } from "./elements";
 import { snapBox, type Box, type Guide } from "./snapping";
+import {
+  anchorOf,
+  elementAabb,
+  positionedBox,
+  resizeFromHandle,
+  rotateVector,
+  type ResizeHandle,
+} from "./elementGeometry";
 import type { EditorPreferences } from "./preferences";
 import { IconButton } from "../ui/IconButton";
 import type { Translate } from "../i18n";
@@ -23,8 +31,7 @@ export interface CanvasProps {
   onOpenMenu(elementId: string, point: { x: number; y: number }): void;
 }
 
-type Handle = "nw" | "n" | "ne" | "w" | "e" | "sw" | "s" | "se";
-const HANDLES: Handle[] = ["nw", "n", "ne", "w", "e", "sw", "s", "se"];
+const HANDLES: ResizeHandle[] = ["nw", "n", "ne", "w", "e", "sw", "s", "se"];
 
 /**
  * El dibujo es de Core: `RendererCore` monta el escenario y usa geometría
@@ -114,20 +121,24 @@ export function Canvas({
    * sólo en el marco de selección; redibujar la slide entera por frame
    * cancelaría animaciones y parpadearía.
    */
-  const paintPreview = useCallback((elementId: string, box: Box) => {
-    const node = host.current?.querySelector<HTMLElement>(`[data-element-id="${CSS.escape(elementId)}"]`);
+  const paintPreview = useCallback((element: EditorElement, box: Box) => {
+    const node = host.current?.querySelector<HTMLElement>(`[data-element-id="${CSS.escape(element.id)}"]`);
     if (!node) return;
-    node.style.left = `${(box.x / width) * 100}%`;
-    node.style.top = `${(box.y / height) * 100}%`;
+    const shown = { ...element, ...box };
+    const positioned = positionedBox(shown);
+    const anchor = anchorOf(shown);
+    node.style.left = `${(positioned.left / width) * 100}%`;
+    node.style.top = `${(positioned.top / height) * 100}%`;
     node.style.width = `${(box.width / width) * 100}%`;
     node.style.height = `${(box.height / height) * 100}%`;
+    node.style.transformOrigin = `${anchor.x * 100}% ${anchor.y * 100}%`;
   }, [height, width]);
 
   const restore = useCallback(() => {
     renderer.current?.renderSlide(deck, slideId);
   }, [deck, slideId]);
 
-  const begin = (event: React.PointerEvent, element: EditorElement, handle?: Handle) => {
+  const begin = (event: React.PointerEvent, element: EditorElement, handle?: ResizeHandle) => {
     if (disabled || element.isLocked || event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
@@ -149,25 +160,65 @@ export function Canvas({
       const deltaY = (pointer.clientY - origin.y) * scale;
       if (!moved && Math.hypot(pointer.clientX - origin.x, pointer.clientY - origin.y) < 4) return;
       moved = true;
-      const raw = handle ? resize(start, handle, deltaX, deltaY) : { ...start, x: start.x + deltaX, y: start.y + deltaY };
+      const rawElement = handle
+        ? resizeFromHandle(element, handle, deltaX, deltaY)
+        : { ...element, x: start.x + deltaX, y: start.y + deltaY };
+      const raw = { x: rawElement.x, y: rawElement.y, width: rawElement.width, height: rawElement.height };
       // Alt suelta los imanes sin desactivar la preferencia: a veces hace falta
       // sólo por un gesto.
-      const snapped = pointer.altKey
-        ? { box: raw, guides: [] }
-        : snapBox({
-            moved: raw,
-            others,
-            canvas: deck.canvas,
-            threshold: 6 * scale,
-            mode: handle ? "resize" : "move",
-            snapToGrid: preferences.snapToGrid,
-            snapToElements: preferences.snapToElements,
-            gridStep: preferences.gridStep,
-          });
+      const otherBounds = others.map((candidate) => {
+        const bounds = elementAabb(candidate);
+        return { id: candidate.id, x: bounds.left, y: bounds.top, width: bounds.right - bounds.left, height: bounds.bottom - bounds.top };
+      });
+      let snapped: { box: Box; guides: Guide[] } = { box: raw, guides: [] };
+      if (!pointer.altKey && handle) {
+        const point = resizeHandlePoint(rawElement, handle);
+        const pointSnap = snapBox({
+          moved: { x: point.x, y: point.y, width: 0, height: 0 },
+          others: otherBounds,
+          canvas: deck.canvas,
+          threshold: 6 * scale,
+          mode: "move",
+          snapToGrid: preferences.snapToGrid,
+          snapToElements: preferences.snapToElements,
+          gridStep: preferences.gridStep,
+        });
+        const corrected = resizeFromHandle(
+          element,
+          handle,
+          deltaX + pointSnap.box.x - point.x,
+          deltaY + pointSnap.box.y - point.y,
+        );
+        snapped = {
+          box: { x: corrected.x, y: corrected.y, width: corrected.width, height: corrected.height },
+          guides: pointSnap.guides,
+        };
+      } else if (!pointer.altKey) {
+        const bounds = elementAabb(rawElement);
+        const aabb = { x: bounds.left, y: bounds.top, width: bounds.right - bounds.left, height: bounds.bottom - bounds.top };
+        const aabbSnap = snapBox({
+          moved: aabb,
+          others: otherBounds,
+          canvas: deck.canvas,
+          threshold: 6 * scale,
+          mode: "move",
+          snapToGrid: preferences.snapToGrid,
+          snapToElements: preferences.snapToElements,
+          gridStep: preferences.gridStep,
+        });
+        snapped = {
+          box: {
+            ...raw,
+            x: raw.x + aabbSnap.box.x - aabb.x,
+            y: raw.y + aabbSnap.box.y - aabb.y,
+          },
+          guides: aabbSnap.guides,
+        };
+      }
       latest = snapped.box;
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
-        paintPreview(element.id, latest);
+        paintPreview(element, latest);
         setPreview({ [element.id]: latest });
         setGuides(snapped.guides);
       });
@@ -216,7 +267,7 @@ export function Canvas({
     window.addEventListener("keydown", escape);
   };
 
-  const nudge = (element: EditorElement, event: React.KeyboardEvent, resizing = false) => {
+  const nudge = (element: EditorElement, event: React.KeyboardEvent, handle?: ResizeHandle) => {
     if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
     if (disabled || element.isLocked) return;
     event.preventDefault();
@@ -224,16 +275,12 @@ export function Canvas({
     const amount = event.shiftKey ? 10 : 1;
     const horizontal = event.key === "ArrowLeft" ? -amount : event.key === "ArrowRight" ? amount : 0;
     const vertical = event.key === "ArrowUp" ? -amount : event.key === "ArrowDown" ? amount : 0;
-    const next: Box = resizing
-      ? {
-          x: element.x,
-          y: element.y,
-          width: Math.max(1, element.width + horizontal),
-          height: Math.max(1, element.height + vertical),
-        }
+    const resized = handle ? resizeFromHandle(element, handle, horizontal, vertical) : undefined;
+    const next: Box = resized
+      ? { x: resized.x, y: resized.y, width: resized.width, height: resized.height }
       : { x: element.x + horizontal, y: element.y + vertical, width: element.width, height: element.height };
     onCommitGeometry(element.id, next);
-    setAnnouncement(resizing
+    setAnnouncement(handle
       ? t("editor.resizedAnnouncement", { name: element.name, width: next.width, height: next.height })
       : t("editor.movedAnnouncement", { name: element.name, x: next.x, y: next.y }));
   };
@@ -333,6 +380,8 @@ export function Canvas({
           >
             {elements.map((element) => {
               const shown = box(element);
+              const positioned = positionedBox(shown);
+              const anchor = anchorOf(shown);
               const selected = element.id === selectedId;
               return (
                 <div
@@ -343,11 +392,12 @@ export function Canvas({
                   aria-pressed={selected}
                   className={`canvas__target ${selected ? "is-selected" : ""} ${element.isLocked ? "is-locked" : ""}`}
                   style={{
-                    left: `${(shown.x / width) * 100}%`,
-                    top: `${(shown.y / height) * 100}%`,
+                    left: `${(positioned.left / width) * 100}%`,
+                    top: `${(positioned.top / height) * 100}%`,
                     width: `${(shown.width / width) * 100}%`,
                     height: `${(shown.height / height) * 100}%`,
                     transform: `rotate(${element.rotationDeg}deg)`,
+                    transformOrigin: `${anchor.x * 100}% ${anchor.y * 100}%`,
                   }}
                   onPointerDown={(event) => begin(event, element)}
                   onKeyDown={(event) => {
@@ -379,7 +429,7 @@ export function Canvas({
                       className={`canvas__handle is-${handle}`}
                       aria-label={t("editor.resize", { name: element.name })}
                       onPointerDown={(event) => begin(event, element, handle)}
-                      onKeyDown={(event) => nudge(element, event, true)}
+                      onKeyDown={(event) => nudge(element, event, handle)}
                     />
                   ))}
                 </div>
@@ -398,25 +448,12 @@ export function Canvas({
  * izquierdo tiene que mover `x` y no sólo el ancho, o el elemento se escaparía
  * hacia el otro lado mientras se arrastra.
  */
-function resize(start: Box, handle: Handle, deltaX: number, deltaY: number): Box {
-  const next = { ...start };
-  if (handle.includes("e")) next.width = start.width + deltaX;
-  if (handle.includes("s")) next.height = start.height + deltaY;
-  if (handle.includes("w")) {
-    next.width = start.width - deltaX;
-    next.x = start.x + deltaX;
-  }
-  if (handle.includes("n")) {
-    next.height = start.height - deltaY;
-    next.y = start.y + deltaY;
-  }
-  if (next.width < 1) {
-    next.width = 1;
-    if (handle.includes("w")) next.x = start.x + start.width - 1;
-  }
-  if (next.height < 1) {
-    next.height = 1;
-    if (handle.includes("n")) next.y = start.y + start.height - 1;
-  }
-  return next;
+function resizeHandlePoint(element: EditorElement, handle: ResizeHandle) {
+  const anchor = anchorOf(element);
+  const localX = handle.includes("w") ? -anchor.x * element.width
+    : handle.includes("e") ? (1 - anchor.x) * element.width : (0.5 - anchor.x) * element.width;
+  const localY = handle.includes("n") ? -anchor.y * element.height
+    : handle.includes("s") ? (1 - anchor.y) * element.height : (0.5 - anchor.y) * element.height;
+  const offset = rotateVector(localX, localY, element.rotationDeg);
+  return { x: element.x + offset.x, y: element.y + offset.y };
 }

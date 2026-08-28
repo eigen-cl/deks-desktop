@@ -15,11 +15,12 @@ import {
   Settings,
   Sparkles,
   Square,
+  Diamond,
   Trash2,
   Type,
   Undo2,
 } from "lucide-react";
-import type { DeksCommand, DeksDocument, DeksFileAsset, MotionRole, MotionRolePatch } from "@deks-js/document";
+import { reanchorElementState, type Anchor, type DeksCommand, type DeksDocument, type DeksFileAsset, type MotionRole, type MotionRolePatch } from "@deks-js/document";
 import { Canvas } from "./Canvas";
 import { EditorSettings } from "./EditorSettings";
 import { Inspector, type InspectorTab } from "./Inspector";
@@ -33,6 +34,7 @@ import {
   duplicateElement,
   duplicateSlide,
   editorElements,
+  elementState,
   slideOf,
   stateForSlide,
   swapZIndex,
@@ -63,11 +65,12 @@ export interface EditorProps {
   onExit(): void;
 }
 
-const TOOLS: Array<{ kind: InsertableKind; icon: typeof Type; labelKey: "editor.addText" | "editor.addNumber" | "editor.addRectangle" | "editor.addEllipse" | "editor.addLine" | "editor.addIcon" }> = [
+const TOOLS: Array<{ kind: InsertableKind; icon: typeof Type; labelKey: "editor.addText" | "editor.addNumber" | "editor.addRectangle" | "editor.addEllipse" | "editor.addLine" | "editor.addDiamond" | "editor.addIcon" }> = [
   { kind: "text", icon: Type, labelKey: "editor.addText" },
   { kind: "number", icon: Hash, labelKey: "editor.addNumber" },
   { kind: "rectangle", icon: Square, labelKey: "editor.addRectangle" },
   { kind: "ellipse", icon: Circle, labelKey: "editor.addEllipse" },
+  { kind: "diamond", icon: Diamond, labelKey: "editor.addDiamond" },
   { kind: "line", icon: Minus, labelKey: "editor.addLine" },
   { kind: "icon", icon: Sparkles, labelKey: "editor.addIcon" },
 ];
@@ -390,10 +393,27 @@ export function Editor({
           onPatchSlide={(patch) => run({ type: "update-slide", slideId: slide.id, patch })}
           onRenameElement={(name) =>
             selected && run({ type: "update-element-identity", elementId: selected.id, patch: { name } })}
+          onPatchIdentity={(patch) =>
+            selected && run({ type: "update-element-identity", elementId: selected.id, patch })}
           onLockElement={(isLocked) =>
             selected && run({ type: "update-element-identity", elementId: selected.id, patch: { isLocked } })}
           onAnimateMagnitude={(animateMagnitude) =>
             selected && run({ type: "update-element-identity", elementId: selected.id, patch: { animateMagnitude } })}
+          onSetAnchor={(anchor?: Anchor) => {
+            if (!selected) return;
+            const state = elementState(deck, slide.id, selected.id);
+            if (!state) return;
+            const requested = anchor ?? { x: 0, y: 0 };
+            const current = state.anchor ?? { x: 0, y: 0 };
+            if (current.x === requested.x && current.y === requested.y) return;
+            const next = reanchorElementState(state, anchor);
+            run({
+              type: "update-element-state",
+              slideId: slide.id,
+              elementId: selected.id,
+              patch: { x: next.x, y: next.y, anchor: next.anchor },
+            } as DeksCommand);
+          }}
           onPatchState={(patch) =>
             selected && run({ type: "update-element-state", slideId: slide.id, elementId: selected.id, patch })}
           onRemoveFromSlide={() => {

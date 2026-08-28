@@ -81,10 +81,11 @@ presentation, and without the skills it does not know how to do it well.
   authorizes that same folder as `DEKS_PROJECTS_ROOT`; a global install authorizes the default
   presentations folder.
 
-The skills are the two reviewed ones from `deks-plugin`: `deks-presentations`, the technical MCP and
-safety contract, and `design-deks-presentations`, the story, visual-system, motion and QA method.
-Desktop copies each complete skill tree, including its relative references and agent metadata, and
-never follows bundled symlinks.
+Desktop ships a reviewed snapshot of all five DEKS skills, including their relative references and
+agent metadata, and never follows bundled symlinks. The snapshot is owned and versioned by the
+Desktop release recorded in `bundled-skills/manifest.json`. A sibling `deks-plugin` checkout is used
+only to detect development drift; this does not claim that the same snapshot has already been
+published as a plugin release.
 
 Writing MCP configuration is a deliberate, explicitly requested exception to "never touch another
 program's files", and it is kept as narrow as possible. Desktop merges **only** the `deks` entry into
@@ -181,7 +182,7 @@ Embedded assets whose bytes exist are resolved from the `.deks` and rendered, so
 see the image it just added. Only an asset whose bytes are genuinely missing is omitted and reported
 as `asset_unresolved`.
 
-The Desktop host validates and passes canonical SVG to the Core 4.2 preview boundary. The editor,
+The Desktop host validates and passes canonical SVG to the published Core preview boundary. The editor,
 presenter and MCP preview all resolve the same sanitized embedded bytes; browser network access
 remains blocked and no SVG is silently omitted by Desktop's preparation step.
 

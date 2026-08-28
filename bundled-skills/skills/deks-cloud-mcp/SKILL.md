@@ -1,6 +1,6 @@
 ---
 name: deks-cloud-mcp
-description: "Operate the DEKS Cloud MCP server at api-deks.eigen.cl: OAuth or workspace PAT, the full tool map (presentations, slides, elements, motion, palettes, icon catalog, layout validation, rendered previews, publication, export, undo), the exact apply_commands envelope in snake_case, revisions and idempotency keys, workspace assets, the 50-checkpoint and 100-state quotas, and what each error code means. Use it whenever the discovered tools include validate_layout, recommend_palettes, publish_presentation or export_deck, or whenever the deck lives in a workspace rather than in a local `.deks` file. Pair with $deks-presentations for the document contract itself."
+description: "Operate the DEKS Cloud MCP server at api-deks.eigen.cl: OAuth or workspace PAT, the full tool map (presentations, slides, elements, motion, palettes, the searchable and paged offline Lucide catalog, asset upload, layout validation, rendered previews, publication, export, undo), the exact apply_commands envelope in snake_case, revisions and idempotency keys, workspace assets, the 50-checkpoint and 100-state quotas, and what each error code means. Use it whenever the discovered tools include validate_layout, recommend_palettes, upload_asset, publish_presentation or export_deck, or whenever the deck lives in a workspace rather than in a local `.deks` file. Pair with $deks-presentations for the document contract itself."
 ---
 
 # Operate the DEKS Cloud MCP
@@ -33,21 +33,47 @@ their `readOnlyHint`, `openWorldHint`, and `destructiveHint` annotations. Do not
 on a hard-coded tool count, and do not call a tool named in this file if discovery
 does not list it.
 
+## Keep remote round trips semantic
+
+In ChatGPT and other remote clients, use `apply_commands` as the default write path
+for a coherent checkpoint or short narration. Put related identity declarations,
+states, styling and motion in one atomic batch instead of calling one mutation tool
+per element or property. A batch is a semantic transaction, not merely a container:
+do not combine unrelated narrations, external publication or destructive cleanup to
+save calls, and keep it at or below 100 operations.
+
+Read the revision before planning the first transaction. After a confirmed batch,
+carry its returned revision into the next transaction and give that next batch a new
+semantic `idempotency_key`; do not move `expected_revision` or the key inside the
+commands. Re-read on a conflict, an uncertain response, or whenever authoritative
+state may have changed — batching never relaxes revision or recovery rules.
+
+Validate and render the coherent result: complete one checkpoint or narration,
+validate it, then render its affected checkpoints once. Do not validate or render
+after each property mutation. Re-render checkpoints changed by a correction batch,
+and run whole-deck validation plus ordered rendered review at the end.
+
 ## The loop
 
 1. `list_presentations` to resolve the deck, then `get_presentation` immediately
    before planning any mutation. Capture the revision.
-2. `list_assets` before asking for media. **The MCP does not upload assets** — ask
-   the user to upload them in the web app, where they pass the shared image
-   admission contract.
-3. Plan the change. Group coherent edits into one `apply_commands` batch of at most
-   100 operations; a failed batch is atomic and leaves the revision untouched.
+2. `list_assets` before requesting new media. Reuse a matching admitted asset when
+   one exists. When the user has explicitly attached a file, call `upload_asset`
+   once and reuse the returned `id` as the image state's `asset_id`; never invent file bytes, a local path,
+   or a URL. If the user only mentions a file or path, ask them to attach it before
+   calling the tool. Uploaded media passes the shared image admission contract.
+3. Plan the change. Group each coherent checkpoint or narration into one
+   `apply_commands` batch of at most 100 operations; a failed batch is atomic and
+   leaves the revision untouched. Prefer this over element-by-element mutation tools.
 4. Send the exact latest `expected_revision` and one semantic `idempotency_key` per
    intended transaction. Continue from the revision the response returns.
-5. `validate_layout` after each coherent checkpoint and again over the whole deck.
+5. `validate_layout` after each coherent checkpoint or narration transaction and
+   again over the whole deck, not after each property. Carry the confirmed returned
+   revision between transactions.
    Treat errors and unintended outside-canvas geometry as blockers.
-6. `render_slide_preview` on every checkpoint you touched, at the freshly read
-   revision, and actually look at the images.
+6. `render_slide_preview` once the affected checkpoint is coherently composed, at
+   the confirmed revision, and actually look at the image. Re-render after a
+   correction batch; do not render between individual property mutations.
 7. Re-read and report the final revision, the QA level reached, remaining
    intentional warnings, and anything you could not do.
 

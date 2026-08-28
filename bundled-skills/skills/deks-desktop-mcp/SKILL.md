@@ -10,6 +10,11 @@ authorized root folder**. Presentations never leave the disk and there is no tok
 and no account. A presentation is one direct `.deks` file whose strict manifest and
 embedded assets are read and written by `@deks-js/document`.
 
+The current canonical manifest is codec v2 (`codecVersion: 2`). Desktop decodes
+an unmarked or explicit v1 file through Core's v1 → v2 migration before exposing
+it, using the first state in slide order when legacy fixed text fields conflict.
+Writes always persist v2; a future codec version is rejected rather than guessed.
+
 The document contract — what the fields mean and what values they take — lives in
 `$deks-presentations`. This skill is only about reaching it through this server.
 
@@ -41,6 +46,23 @@ performs in the app, not something to work around.
 That is the whole surface. Everything that mutates the deck goes through
 `apply_commands`.
 
+## Keep client round trips semantic
+
+Do not call `apply_commands` once per element or property. Group the identities,
+states, styling and motion that complete one coherent checkpoint or short narration
+into one atomic batch of at most 100 commands. Keep assets in their required
+`add_asset` transactions and keep unrelated, destructive or scene-independent work
+out of a batch merely to reduce calls.
+
+Read before the first transaction. After a confirmed batch, use its returned
+revision as the next batch's `expected_revision` and issue a new semantic
+`idempotency_key`. Re-read on conflicts and uncertain responses; latency reduction
+never permits guessed revisions or reused keys for different payloads.
+
+Render the coherent checkpoint or narration after its batch commits, not after each
+property. Re-render the affected checkpoint after correction batches and inspect the
+whole ordered sequence at the final confirmed revision.
+
 ## The envelope is not the Cloud one
 
 This is the single most common way to get it wrong. Cloud takes
@@ -60,6 +82,12 @@ The fifteen types are `update-document`, `define-asset`, `remove-asset`,
 Note what that means in practice: there is no `create_element` that also places the
 element. You `define-element` the identity, then `add-element-state` its state on a
 slide — which is exactly the document model, made explicit.
+
+For text, `define-element` owns `content`, `fontFamily`, both alignments and
+`overflowMode`; `add-element-state` owns continuous typography, colour and optional
+four-sided padding. Different content or semantic text types need different
+identities. For a fine visual adjustment keep alignment fixed and update `x`/`y`
+or padding on the state.
 
 ## Assets
 
@@ -108,7 +136,11 @@ element IDs. Render every checkpoint you touched at the freshly read revision, a
 look at the images — the report catches overflow, not hierarchy, contrast, or whether
 the motion means anything.
 
-The Desktop runtime pins the exact `@deks-js/render-preview@4.2.0` contract and
+“Every checkpoint” is the QA coverage target, not a request to render between
+individual commands. Compose a checkpoint coherently in `apply_commands`, then
+render it once at the returned revision; render it again only after a correction.
+
+The Desktop runtime pins the exact `@deks-js/render-preview` version declared by its bundled MCP and
 renders both admitted raster images and canonical safe SVG from the embedded
 `.deks` assets. Do not replace an embedded image with a filesystem path or remote
 URL.
@@ -128,9 +160,12 @@ Do not call these; they belong to `$deks-cloud-mcp`:
 every publication tool.
 
 The capabilities behind most of them still exist — as commands inside
-`apply_commands`. The ones that genuinely do not exist locally are the palette
-recommender, the icon catalog, geometry validation, undo, publication, and archive
-export. Do not invent them, and do not tell the user a local deck can be published.
+`apply_commands`. Desktop's bundled Core validates and renders the complete pinned
+Lucide 1.34.0 family offline, but Desktop does not expose `list_icon_catalog`: an
+agent cannot search or page icon names through the local MCP. The capabilities that
+genuinely do not exist locally are palette recommendation, icon-catalog discovery,
+geometry validation, undo, publication, and archive export. Do not invent them, and
+do not tell the user a local deck can be published.
 
 Creating a presentation is a user action in the app, not an MCP call. If there is no
 project to work in, ask for one.

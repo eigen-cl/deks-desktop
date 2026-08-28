@@ -7,6 +7,13 @@ the same object. Field names and value ranges are the document's own — see
 `apply_commands` takes 1–100 of them and applies the whole array as **one** revision
 and one undo step. If any command is invalid, nothing is applied.
 
+Prefer one call for the coherent commands that compose a checkpoint or short
+narration. Defining an identity, adding its state, placing its related elements and
+setting their motion are normally one transaction, not one MCP call per command or
+property. Continue from the revision returned by that transaction and use a new
+semantic idempotency key for the next one. Render the completed checkpoint after the
+batch, not between its commands.
+
 ```json
 {
   "presentation_id": "propuesta-q3",
@@ -50,9 +57,16 @@ references.
 ## Element identities
 
 An identity carries no geometry. Declare it once, then give it state per slide.
+In codec v2 a text identity also owns the fields that must never diverge between
+slides.
 
 ```json
-{"type": "define-element", "element": {"id": "story-title", "kind": "text", "name": "Título", "isLocked": false}}
+{"type": "define-element", "element": {
+  "id": "story-title", "kind": "text", "name": "Título",
+  "content": "Un trimestre que cambia el plan.", "fontFamily": "Poppins",
+  "horizontalAlignment": "left", "verticalAlignment": "middle",
+  "overflowMode": "hidden", "isLocked": false
+}}
 ```
 
 ```json
@@ -64,12 +78,19 @@ An identity carries no geometry. Declare it once, then give it state per slide.
 {"type": "define-element", "element": {"id": "rule", "kind": "shape", "shapeKind": "line", "name": "Separador", "isLocked": false}}
 ```
 
+Shapes also accept `shapeKind: "diamond"`.
+
 ```json
 {"type": "update-element-identity", "elementId": "story-title", "patch": {"name": "Título del capítulo"}}
+{"type": "update-element-identity", "elementId": "story-title", "patch": {"horizontalAlignment": "center"}}
 {"type": "delete-element", "elementId": "story-title"}
 ```
 
-`delete-element` removes the identity and every state it has anywhere.
+`content`, `fontFamily`, `horizontalAlignment`, `verticalAlignment` and
+`overflowMode` are text identity fields: an update changes every slide where the
+identity appears. Use a new identity for different copy or a different semantic
+text type. For fine positioning, keep alignment stable and patch state `x`/`y`
+instead. `delete-element` removes the identity and every state it has anywhere.
 
 ## Slides
 
@@ -102,13 +123,16 @@ This is where the composition actually happens.
 {"type": "add-element-state", "slideId": "resultados", "state": {
   "elementId": "story-title", "x": 80, "y": 188, "width": 920, "height": 224,
   "rotationDeg": 0, "opacity": 1, "zIndex": 4,
-  "content": "Un trimestre que cambia el plan.",
-  "fontFamily": "Poppins", "fontSize": 64, "fontWeight": 600,
+  "fontSize": 64, "fontWeight": 600,
   "lineHeight": 1.05, "letterSpacing": -1.4,
-  "horizontalAlignment": "left", "verticalAlignment": "middle",
-  "overflowMode": "hidden", "fill": "#F2F1EC"
+  "padding": {"top": 8, "right": 16, "bottom": 8, "left": 16},
+  "fill": "#F2F1EC"
 }}
 ```
+
+Text `padding` is animatable state. All four non-negative sides are required when
+present; omission means four zeros. It changes the inner text box, not the outer
+geometry, anchor or snapping bounds.
 
 A number state carries the magnitude and its complete formatting instead of text:
 
@@ -124,6 +148,21 @@ A number state carries the magnitude and its complete formatting instead of text
   "overflowMode": "hidden", "fill": "#65C18C"
 }}
 ```
+
+Every state may include an optional normalized `anchor`:
+
+```json
+{"type": "add-element-state", "slideId": "resultados", "state": {
+  "elementId": "decision", "x": 800, "y": 450, "width": 240, "height": 160,
+  "anchor": {"x": 0.5, "y": 0.5},
+  "rotationDeg": 12, "opacity": 1, "zIndex": 3,
+  "shapeFill": {"kind": "solid", "color": "#FF7043"},
+  "stroke": "#00000000", "strokeWidth": 0
+}}
+```
+
+Both anchor coordinates are required and each is within `0..1`. `x` and `y`
+identify that pivot; omit `anchor` to preserve legacy top-left positioning.
 
 To **continue** an identity onto the next checkpoint, add another state for the same
 `elementId` on that slide. That is what makes it morph. To change one already there:
@@ -188,4 +227,5 @@ If you have a Cloud batch in hand, the mapping is mechanical:
 
 And every snake_case field becomes camelCase: `duration_beats` → `durationBeats`,
 `font_size` → `fontSize`, `shape_fill` → `shapeFill`, `symbol_position` →
-`symbolPosition`, `animate_magnitude` → `animateMagnitude`.
+`symbolPosition`, `animate_magnitude` → `animateMagnitude`. The nested `anchor`
+object remains `{x, y}` on both hosts.

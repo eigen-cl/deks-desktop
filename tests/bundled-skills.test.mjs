@@ -17,6 +17,7 @@ async function tree(root) {
   const files = new Map();
   const walk = async (relative) => {
     for (const entry of await readdir(new URL(relative, root), { withFileTypes: true })) {
+      if (entry.name === ".DS_Store") continue;
       const child = join(relative, entry.name);
       if (entry.isDirectory()) await walk(`${child}/`);
       else files.set(child, await readFile(new URL(child, root), "utf8"));
@@ -160,15 +161,16 @@ test("el método enseña a construir una presentación, no sólo a auditarla", a
 });
 
 /**
- * El bundle es una copia literal de `deks-plugin`. Se comprueba por hash y no
- * por lectura: la copia ya se quedó una versión atrás una vez, con nombres de
- * API retirados, y nadie lo notó hasta que un agente los usó.
+ * Durante el desarrollo, el snapshot de Desktop se sincroniza literalmente
+ * con el checkout hermano de `deks-plugin`. Esta comparación no atribuye el
+ * snapshot a una release pública del plugin: su provenance vive en el manifest
+ * de Desktop.
  */
-test("el bundle es idéntico a las skills publicadas en deks-plugin", async (t) => {
+test("el snapshot bundled coincide con las skills del checkout hermano en desarrollo", async (t) => {
   const plugin = new URL("../../deks-plugin/skills/", import.meta.url);
-  let published;
+  let sibling;
   try {
-    published = await tree(plugin);
+    sibling = await tree(plugin);
   } catch {
     t.skip("deks-plugin no está junto a este repo en este entorno");
     return;
@@ -178,5 +180,5 @@ test("el bundle es idéntico a las skills publicadas en deks-plugin", async (t) 
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([path, content]) => `${path}:${createHash("sha256").update(content).digest("hex")}`);
 
-  assert.deepEqual(digest(files), digest(published));
+  assert.deepEqual(digest(files), digest(sibling));
 });

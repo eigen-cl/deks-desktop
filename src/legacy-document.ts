@@ -1,6 +1,7 @@
 import {
   DEFAULT_MOTION as CORE_DEFAULT_MOTION,
-  assertDeksDocument,
+  migrateDeksDocument,
+  type DeksCodecMigrationResult,
   type DeksDocument,
   type DeksElement,
   type DeksElementState,
@@ -54,7 +55,7 @@ export function isLegacyDocument(value: unknown): boolean {
  */
 const DEFAULT_MOTION = CORE_DEFAULT_MOTION;
 
-export function upgradeLegacyDocument(value: unknown): DeksDocument {
+function legacyV1Document(value: unknown): unknown {
   const legacy = value as Record<string, any>;
   const identities = new Map<string, DeksElement>();
   const slides = (legacy.slides ?? []).map((slide: Record<string, any>) => {
@@ -80,7 +81,7 @@ export function upgradeLegacyDocument(value: unknown): DeksDocument {
     };
   });
 
-  const document = {
+  return {
     format: "deks" as const,
     id: canonicalId(String(legacy.id)),
     name: String(legacy.name ?? "Presentation"),
@@ -96,13 +97,13 @@ export function upgradeLegacyDocument(value: unknown): DeksDocument {
     assets: legacy.assets ?? [],
     elements: [...identities.values()],
     slides,
-  } as unknown as DeksDocument;
-
-  assertDeksDocument(document);
-  return document;
+  };
 }
 
-/** Devuelve el documento canónico, migrando sólo si hace falta. */
+export function upgradeLegacyDocument(value: unknown): DeksDocument {
+  return migrateDeksDocument(legacyV1Document(value)).document;
+}
+
 /**
  * Completa las propiedades de movimiento que el documento no declara.
  *
@@ -127,11 +128,11 @@ function completeMotion(value: unknown): unknown {
   return { ...document, motion: completed };
 }
 
+export function toCanonicalDocumentResult(value: unknown): DeksCodecMigrationResult {
+  const source = isLegacyDocument(value) ? legacyV1Document(value) : value;
+  return migrateDeksDocument(completeMotion(source));
+}
+
 export function toCanonicalDocument(value: unknown): DeksDocument {
-  if (!isLegacyDocument(value)) {
-    const completed = completeMotion(value);
-    assertDeksDocument(completed);
-    return completed;
-  }
-  return upgradeLegacyDocument(value);
+  return toCanonicalDocumentResult(value).document;
 }

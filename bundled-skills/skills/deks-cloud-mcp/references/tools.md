@@ -13,14 +13,37 @@ annotations before every release; do not rely on a hard-coded tool count.
 - `list_presentations()` — list workspace decks and canonical revisions.
 - `get_presentation(presentation_id)` — read the presentation, its ordered slides, element states, motion and current revision.
 - `get_slide_state(presentation_id, slide_id)` — read one checkpoint and its typed states.
-- `list_assets(limit?, cursor?)` — list workspace-scoped media newest first; `limit` defaults to `50` and accepts `1..100`, while `cursor` is an optional UUID copied verbatim from `next_cursor`. The result contains `items` and `next_cursor`; URLs are authenticated workspace paths and bytes are not embedded. Inspect this before asking the user to upload a file. The MCP does not upload assets: the user uploads through Web, which admits PNG/JPEG/GIF/WebP up to 50 MB or static safe SVG up to 5 MB, with 16,384 units per side and 40 megapixels of logical width × height. It canonicalizes SVG before hashing and storage. Cloud's decoder and preview add host-specific animated-raster guards of 200 frames and 100 megapixels in aggregate; those are not portable Web/Desktop format limits.
+- `list_assets(limit?, cursor?)` — list workspace-scoped media newest first; `limit` defaults to `50` and accepts `1..100`, while `cursor` is an optional UUID copied verbatim from `next_cursor`. The result contains `items` and `next_cursor`; URLs are authenticated workspace paths and bytes are not embedded. Inspect this before requesting a new attachment, and reuse an existing matching asset instead of uploading a duplicate.
 - `get_layout_snapshot(presentation_id, slide_id)` — read absolute rectangles and deterministic geometry estimates. Treat estimated text bounds as conservative pre-render signals, never as browser measurements.
 - `render_slide_preview(presentation_id, slide_id, expected_revision, width?)` — render one private checkpoint as a PNG (`width` is `1280` or `1600`) and return `layout_measurements_available`, renderer-derived `layout_measurements`, and `overflow_element_ids`. Always pass the freshly read revision. Use DOM measurements only when the availability flag is exactly `true` and their unique element ID set equals the freshly read slide's rendered element ID set. Missing, duplicate, or unexpected measurement IDs make coverage incomplete. Only complete coverage plus an empty overflow list supports a no-overflow conclusion. A false or absent flag is an image preview without DOM diagnostics, even if `layout_measurements` or `overflow_element_ids` is empty. Map reported overflow IDs back to semantic element names, correct them, re-read, and re-render until a compatible result confirms exact coverage and no overflow. The image is sent to the MCP client/model and is the basis for rendered QA, not a data-isolation mechanism.
 - `validate_layout(presentation_id)` — return geometry-only errors and AABB collision/outside-canvas warnings based on authored bounds and estimates. It is not DOM measurement or rendered visual QA and currently has no semantic understanding of containment or z-order intent.
-- `list_icon_catalog(family?, query?)` — discover trusted offline vector icons by semantic tags. `lucide` is the first family; results contain local path geometry, never remote URLs.
+- `list_icon_catalog(family?, query?, limit?, cursor?)` — search the complete official
+  Lucide 1.34.0 catalog bundled offline. Filtering happens before pagination;
+  `limit` defaults to `50` and accepts `1..100`, and `cursor` is copied verbatim
+  from `next_cursor`. Results report the pinned family version, total matches and
+  sanitized primitive nodes (`path`, `circle`, `ellipse`, `line`, `polyline`,
+  `polygon`, `rect`), never arbitrary markup or remote URLs. Page instead of
+  requesting the whole catalog in one response.
 - `recommend_palettes(intent, mode?, limit?)` — recommend complete semantic palettes with measured contrast ratios. Apply role colors and their paired `on_colors` together rather than cherry-picking swatches.
 - `complete_palette(intent?, mode?, background?, primary?, secondary?, reserve_semantic_colors?)` — preserve a valid supplied subset of `background`, `primary`, and `secondary`, then deterministically complete `primary`, `secondary`, `accent`, `background`, `text`, and `subtext` from the nearest catalog palette. The result includes `on_colors`, measured `contrast_checks`, `provided_roles`, `source_palette_id`, semantic `success`, `failure`, and `warning` colors, plus guidance. It infers mode from the background or defaults to dark. Its default reserves semantic colors; set `reserve_semantic_colors: false` only for a deliberate system that keeps status understandable another way. If fixed anchors cannot meet the contrast contract, the tool fails instead of silently changing them.
 - `export_deck(presentation_id)` — return a portable `.deks` ZIP archive as base64. This MCP response path caps the returned archive at 20 MB; that is a transport guard, not the portable format's 95 MB physical / 90 MB uncompressed bound. A larger valid deck remains exportable through the Web/Cloud file flow. Never paste base64 into chat.
+
+## Asset upload tool
+
+- `upload_asset(file, idempotency_key)` — admit one file explicitly attached by the
+  user to the authenticated workspace and return its canonical asset metadata,
+  including `id`. Call it only when the current request actually contains
+  that attachment. Reuse the returned `id` as the `asset_id` field in every image element that uses
+  the same file; do not upload it once per slide. Never invent file bytes, a local
+  path, or a URL, and never claim that a path mentioned in chat is an attachment.
+  If no file is attached, ask the user to attach it and do not call the tool.
+
+The same Cloud admission contract used by Web applies: PNG/JPEG/GIF/WebP up to
+50 MB or static safe SVG up to 5 MB, with 16,384 units per side and 40 megapixels
+of logical width × height. SVG is canonicalized before hashing and storage.
+Cloud's decoder and preview add host-specific animated-raster guards of 200
+frames and 100 megapixels in aggregate; those are not portable Web/Desktop
+format limits.
 
 ## Presentation palette tool
 
@@ -44,18 +67,22 @@ A presentation contains at most 50 checkpoints. This is an internal complexity g
 
 ## Element tools
 
-- `create_element(...)` — create a stable identity and its state on one slide. Required geometry is `x`, `y`, `width`, and `height`; `kind` is `text`, `number`, `image`, `shape`, `group`, `link-button`, or `icon`.
-- `update_element_state(...)` — replace one slide-local state without changing other checkpoints.
+- `create_element(...)` — create a stable identity and its state on one slide. Required geometry is `x`, `y`, `width`, and `height`; `kind` is `text`, `number`, `image`, `shape`, `group`, `link-button`, or `icon`. For text, this one creation call takes both its fixed identity fields and initial continuous state.
+- `update_element_identity(presentation_id, element_id, expected_revision, idempotency_key, name?, content?, font_family?, horizontal_alignment?, vertical_alignment?, overflow_mode?)` — update one or more identity fields globally. Text fields are accepted only for a text element; at least one non-null change is required.
+- `update_element_state(...)` — replace one slide-local state without changing other checkpoints. For text this accepts continuous typography, fill and optional `padding`, never content, font family, alignment or overflow.
 - `add_existing_element_state(presentation_id, target_slide_id, source_slide_id, element_id, expected_revision, idempotency_key, x?, y?)` — continue a stable identity onto another slide.
 - `remove_element_from_slide(...)` — remove only one checkpoint state.
-- `rename_element(...)` — rename an identity across every slide.
 - `delete_element(...)` — delete the identity and every checkpoint state.
 
-Images require an existing admitted `asset_id`; declaring an element never
-uploads or validates bytes. A safe SVG asset is static canonical UTF-8 from the
-Web upload path: scripts/events, CSS/fonts/`<text>`, `foreignObject`, nested
+Images require an admitted `asset_id`; declaring an element never uploads or
+validates bytes. Resolve it with `list_assets` or, for an explicitly attached
+file, use the returned `id` from `upload_asset` as the image state's `asset_id`. A safe SVG asset is static
+canonical UTF-8 from the Cloud admission path: scripts/events, CSS/fonts/`<text>`, `foreignObject`, nested
 `<image>`, `<use>`, SMIL and remote/data references are forbidden. Shapes require
-`shape_kind`: `rectangle`, `ellipse`, or `line`. `shape_fill` accepts either:
+`shape_kind`: `rectangle`, `ellipse`, `line`, or `diamond`. Every state may also
+carry `anchor: {x, y}` with both normalized coordinates in `0..1`; Cloud keeps that
+object shape while the surrounding command fields are snake_case. Omit `anchor`
+for the legacy top-left pivot. `shape_fill` accepts either:
 
 ```json
 {"kind":"solid","color":"#FF7043"}
@@ -69,6 +96,20 @@ or:
 
 Lines use `stroke` and a solid transparent `shape_fill`, never a gradient. A `link-button` requires a label and a safe absolute HTTPS URL. The current MCP does not expose group parent/child editing.
 
+For `text`, codec v2 owns `content`, `font_family`,
+`horizontal_alignment`, `vertical_alignment` and `overflow_mode` on the identity.
+They never belong to `update_element_state`; use `update_element_identity`, and
+remember that the change applies to every checkpoint carrying that ID. Use a new
+identity for a different phrase, claim, label or semantic text type. For fine
+visual adjustment keep alignment stable and change state `x`/`y`, width or
+padding instead.
+
+Text `padding` is slide-local and animatable. When present it is exactly
+`{"top":n,"right":n,"bottom":n,"left":n}` with all four non-negative values;
+omission means four zeros. The generic state tool also exposes typography fields
+used by `number` and `link-button`; their presence in discovery does not make
+`font_family` or alignments valid slide-state fields for `text`.
+
 A `number` carries a magnitude, not a string of digits, so it has no `content`. Its state declares `value` plus the complete formatting the document renders it with: `decimals` (0 to 6), `group_separator` (`""`, `","`, `"."`, `" "` or `"'"`), `decimal_separator` (`"."` or `","`), `symbol` (up to 8 characters, `""` for none) and `symbol_position` (`before` or `after`). It takes the same typography as text. Formatting is never resolved from a locale: the document says exactly which separators to use, so the same file renders the same digits everywhere.
 
 Its identity carries `animate_magnitude`, three booleans naming which roles count towards the value:
@@ -79,7 +120,12 @@ Its identity carries `animate_magnitude`, three booleans naming which roles coun
 
 Entering counts up from zero, leaving counts down to zero, and a morph counts between the two checkpoints' values on that role's own duration and easing. The toggles live on the identity, not on a state: whether a figure is the kind of figure that counts is decided once. A cut, a zero duration and reduced motion all land on the final value immediately.
 
-An `icon` requires a catalog-backed `icon_family` and `icon_name`; use its normal element `color` for the glyph. Query the catalog by meaning first, keep the icon offline, and never paste arbitrary SVG or fetch an icon URL at render time. Treat icon identity changes as discrete between checkpoints; position, scale, rotation, opacity, and color may still animate through the stable element identity.
+An `icon` requires a catalog-backed `icon_family` and `icon_name`; use its normal
+element `color` for the glyph. Query the complete pinned Lucide 1.34.0 catalog by
+meaning and page with `next_cursor` when needed. Keep the icon offline, and never
+paste arbitrary SVG or fetch an icon URL at render time. Treat icon identity
+changes as discrete between checkpoints; position, scale, rotation, opacity, and
+color may still animate through the stable element identity.
 
 Each checkpoint contains at most 100 rendered element states; a shared identity counts once on each checkpoint where it has state. This is also an internal guardrail: surface it only when it conditions or rejects the task. `create_element` and `add_existing_element_state` return `resource_limit_reached` without mutation when they would exceed the bound. An atomic `apply_commands` batch that crosses either content limit rolls back completely with its revision unchanged. Undo also validates the restored state before writing. There is no secondary plan-specific cap on the total identities in a presentation.
 
@@ -99,6 +145,19 @@ Publishing is an external state change and does not create a snapshot: the publi
 - `clear_motion(presentation_id, role, slide_id, expected_revision, idempotency_key, element_id?)` — drop a slide or element patch so the role inherits again. The presentation scope cannot be cleared: it is the value everything else inherits.
 - `apply_commands(presentation_id, commands, expected_revision, idempotency_key)` — apply 1–100 typed operations atomically as one revision and undo step. `update_slide` and `set_presentation_motion_beat` are not batch commands.
 - `undo_transaction(presentation_id, expected_revision, idempotency_key, transaction_id?)`
+
+For remote-client latency, prefer one `apply_commands` transaction for the coherent
+composition of a checkpoint or short narration: create the needed identities, add
+their states, apply styling and set local motion together. Do not turn each element
+or property into its own MCP round trip. Use the returned revision as the next
+transaction's `expected_revision`, and give every new semantic transaction a new
+idempotency key. A conflict or uncertain response still requires a re-read and the
+normal recovery procedure.
+
+After the batch commits, validate the completed checkpoint or narration and render
+each affected checkpoint. Do not validate or render after every property. Correction
+batches require re-validation and re-rendering of what they changed; the finished
+deck still requires whole-deck validation and ordered rendered review.
 
 Each role carries two delays that **add**: `delay_beats` is a multiple of `motion_beat_ms`, so "start when the previous animation ends" is `delay_beats: 1` and stays true when the deck's tempo changes; `delay_ms` is absolute, for an offset that is about a specific instant. Both default to `0`. The wait is `motion_beat_ms * delay_beats + delay_ms`.
 
@@ -134,6 +193,8 @@ Each operation is strict:
 ```
 
 - Put `slide_id` inside `arguments` for `create_element`.
+- Put `element_id` beside `command` for `update_element_identity`; its fixed
+  identity fields go inside `arguments` and apply globally.
 - Put `slide_id` and `element_id` beside `command` for `update_element_state`, `remove_element_from_slide`, and `add_existing_element_state`; the latter puts `source_slide_id` in `arguments`.
 - Put `slide_id`, and when needed `element_id`, beside `command` for `set_motion` and `clear_motion`; `role` goes in `arguments`.
 - Put `expected_revision` and `idempotency_key` only on the outer `apply_commands` call.

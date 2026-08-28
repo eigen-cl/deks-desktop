@@ -19,12 +19,13 @@ boundary continues, and the renderer interpolates between its two states. The sa
 thing drawn twice under two IDs does not continue — it cross-fades. Every pattern
 that transforms something is really a pattern about reusing one `elementId`.
 
-**Two: a discrete change breaks the interpolation.** A continuing text whose
-`content`, `fontFamily`, alignment or overflow mode differs between the two states
-degrades from one travelling node to two cross-faded nodes, silently, with no error.
-Everything else — position, size, colour, weight, letter spacing, line height,
-opacity, rotation — interpolates. So a transformation you want the audience to *see*
-must keep the string identical and let the geometry carry the change.
+**Two: fixed text identity never changes between slides.** In codec v2,
+`content`, `fontFamily`, alignment and overflow mode live on the element identity,
+not in its per-slide states. A new phrase, label or semantic kind of text therefore
+requires a new `elementId`; the old identity leaves and the new one enters. Reuse a
+text identity only when the exact same text continues. Position, size, colour,
+weight, letter spacing, line height, padding, opacity and rotation may interpolate.
+For fine placement, change `x`/`y` or padding — never alignment as a positional nudge.
 
 ## The catalogue
 

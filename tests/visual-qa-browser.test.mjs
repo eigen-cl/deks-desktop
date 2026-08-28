@@ -8,6 +8,7 @@ import { VisualQaService } from "../mcp/visual-qa.mjs";
 
 const document = {
   format: "deks",
+  codecVersion: 2,
   id: "browser-preview",
   name: "Browser preview",
   revision: 1,
@@ -24,7 +25,12 @@ const document = {
   },
   history: { canUndo: false, canRedo: false },
   assets: [],
-  elements: [{ id: "headline", kind: "text", name: "Headline", isLocked: false }],
+  elements: [{
+    id: "headline", kind: "text", name: "Headline", isLocked: false,
+    content: "Rendered by DEKS Core", fontFamily: "Poppins",
+    horizontalAlignment: "left", verticalAlignment: "middle",
+    overflowMode: "hidden",
+  }],
   slides: [{
     id: "slide-1", name: "Rendered", isTemplate: false,
     background: { kind: "solid", color: "#ffffff" },
@@ -32,13 +38,26 @@ const document = {
       elementId: "headline",
       x: 100, y: 100, width: 800, height: 160,
       rotationDeg: 0, opacity: 1, zIndex: 1,
-      content: "Rendered by DEKS Core", fontFamily: "Poppins", fontSize: 48,
+      fontSize: 48,
       fontWeight: 600, lineHeight: 1.2, letterSpacing: 0,
-      horizontalAlignment: "left", verticalAlignment: "middle",
-      overflowMode: "hidden", fill: "#111111",
+      fill: "#111111",
     }],
   }],
 };
+
+function legacyV1ExpandedDocument() {
+  const legacy = structuredClone(document);
+  delete legacy.codecVersion;
+  const identity = legacy.elements[0];
+  const state = legacy.slides[0].states[0];
+  for (const property of [
+    "content", "fontFamily", "horizontalAlignment", "verticalAlignment", "overflowMode",
+  ]) {
+    state[property] = identity[property];
+    delete identity[property];
+  }
+  return legacy;
+}
 
 test("Desktop visual QA produces a real settled PNG and DOM measurements", async () => {
   const service = new VisualQaService({
@@ -69,7 +88,7 @@ test("stdio waits for an in-flight preview before closing Chromium", { timeout: 
   const project = join(root, "browser-preview");
   await mkdir(join(project, "assets"), { recursive: true });
   await mkdir(join(project, "changes"), { recursive: true });
-  await writeFile(join(project, "document.deks.json"), `${JSON.stringify(document)}\n`, "utf8");
+  await writeFile(join(project, "document.deks.json"), `${JSON.stringify(legacyV1ExpandedDocument())}\n`, "utf8");
 
   const child = spawn(process.execPath, ["mcp/server.mjs"], {
     cwd: new URL("..", import.meta.url),

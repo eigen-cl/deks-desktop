@@ -5,6 +5,7 @@ import {
   createDeksFile,
   parseDeksJson,
   readDeksFile,
+  reanchorElementState,
   type DeksCommand,
 } from "@deks-js/document";
 import { createElement, createSlide, duplicateSlide } from "../src/editor/elements";
@@ -23,7 +24,7 @@ describe("portabilidad del documento editado en escritorio", () => {
     let document = seed();
     const slideId = document.slides[0]!.id;
 
-    for (const kind of ["text", "rectangle", "ellipse", "line", "icon"] as const) {
+    for (const kind of ["text", "rectangle", "ellipse", "line", "diamond", "icon"] as const) {
       const { element, state } = createElement(document, slideId, kind);
       document = applyDeksCommands(document, [
         { type: "define-element", element },
@@ -32,12 +33,64 @@ describe("portabilidad del documento editado en escritorio", () => {
     }
 
     expect(() => assertDeksDocument(document)).not.toThrow();
-    expect(document.elements).toHaveLength(5);
-    expect(document.slides[0]!.states).toHaveLength(5);
+    expect(document.elements).toHaveLength(6);
+    expect(document.slides[0]!.states).toHaveLength(6);
     // Identidad y checkpoint siguen separados: el editor nunca incrusta la
     // proyección que usa en pantalla.
     expect(document.elements[0]).not.toHaveProperty("x");
     expect(document.slides[0]!.states[0]).not.toHaveProperty("kind");
+    expect(document.codecVersion).toBe(2);
+    expect(document.elements[0]).toMatchObject({
+      kind: "text",
+      content: expect.any(String),
+      fontFamily: "Poppins",
+      horizontalAlignment: "left",
+      verticalAlignment: "middle",
+      overflowMode: "hidden",
+    });
+    expect(document.slides[0]!.states[0]).not.toHaveProperty("content");
+  });
+
+  it("guarda padding de cuatro lados sólo en el checkpoint de texto", () => {
+    let document = seed();
+    const slideId = document.slides[0]!.id;
+    const { element, state } = createElement(document, slideId, "text");
+    document = applyDeksCommands(document, [
+      { type: "define-element", element },
+      { type: "add-element-state", slideId, state },
+      {
+        type: "update-element-state",
+        slideId,
+        elementId: element.id,
+        patch: { padding: { top: 8, right: 16, bottom: 24, left: 32 } },
+      },
+    ]).document;
+
+    expect(document.slides[0]!.states[0]!.padding).toEqual({ top: 8, right: 16, bottom: 24, left: 32 });
+    expect(document.elements[0]).not.toHaveProperty("padding");
+    expect(() => assertDeksDocument(document)).not.toThrow();
+  });
+
+  it("serializa un rombo con anchor normalizado y conserva el punto visual al cambiarlo", () => {
+    let document = seed();
+    const slideId = document.slides[0]!.id;
+    const { element, state } = createElement(document, slideId, "diamond");
+    document = applyDeksCommands(document, [
+      { type: "define-element", element },
+      { type: "add-element-state", slideId, state },
+    ]).document;
+
+    const anchored = reanchorElementState(document.slides[0]!.states[0]!, { x: 0.5, y: 0.5 });
+    document = applyDeksCommands(document, [{
+      type: "update-element-state",
+      slideId,
+      elementId: element.id,
+      patch: { x: anchored.x, y: anchored.y, anchor: anchored.anchor },
+    }]).document;
+
+    expect(document.elements[0]).toMatchObject({ kind: "shape", shapeKind: "diamond" });
+    expect(document.slides[0]!.states[0]).toMatchObject({ anchor: { x: 0.5, y: 0.5 } });
+    expect(() => assertDeksDocument(document)).not.toThrow();
   });
 
   it("sobrevive un viaje completo por JSON, que es como lo abre la web", () => {

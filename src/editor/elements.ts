@@ -13,7 +13,7 @@ import { DEFAULT_LOCALE, translator, type Translate } from "../i18n";
  */
 export type EditorElement = DeksElement & Omit<DeksElementState, "elementId">;
 
-export type InsertableKind = "text" | "number" | "rectangle" | "ellipse" | "line" | "icon";
+export type InsertableKind = "text" | "number" | "rectangle" | "ellipse" | "line" | "diamond" | "icon";
 
 export interface ImportedAsset {
   id: string;
@@ -75,20 +75,25 @@ export function createElement(
 
   if (kind === "text") {
     return {
-      element: { id: elementId, kind: "text", name: t("default.textName"), isLocked: false },
+      element: {
+        id: elementId,
+        kind: "text",
+        name: t("default.textName"),
+        content: t("default.textContent"),
+        fontFamily: "Poppins",
+        horizontalAlignment: "left",
+        verticalAlignment: "middle",
+        overflowMode: "hidden",
+        isLocked: false,
+      },
       state: {
         ...base,
         ...box(0.7, 0.18),
-        content: t("default.textContent"),
         fill: document.palette.text,
-        fontFamily: "Poppins",
         fontSize: Math.round(height * 0.07),
         fontWeight: 600,
         lineHeight: 1.15,
         letterSpacing: 0,
-        horizontalAlignment: "left",
-        verticalAlignment: "middle",
-        overflowMode: "hidden",
       },
     };
   }
@@ -156,13 +161,15 @@ export function createElement(
       },
     };
   }
-  const shapeKind = kind === "ellipse" ? "ellipse" : "rectangle";
+  const shapeKind = kind === "ellipse" ? "ellipse" : kind === "diamond" ? "diamond" : "rectangle";
   return {
     element: {
       id: elementId,
       kind: "shape",
       shapeKind,
-      name: t(shapeKind === "ellipse" ? "default.ellipseName" : "default.rectangleName"),
+      name: t(shapeKind === "ellipse"
+        ? "default.ellipseName"
+        : shapeKind === "diamond" ? "default.diamondName" : "default.rectangleName"),
       isLocked: false,
     },
     state: {
@@ -325,6 +332,19 @@ function identityOf(element: EditorElement): DeksElement {
   }
   if (element.kind === "number") {
     return { id: element.id, kind: "number", animateMagnitude: element.animateMagnitude, name, isLocked };
+  }
+  if (element.kind === "text") {
+    return {
+      id: element.id,
+      kind: "text",
+      name,
+      content: element.content,
+      fontFamily: element.fontFamily,
+      horizontalAlignment: element.horizontalAlignment,
+      verticalAlignment: element.verticalAlignment,
+      overflowMode: element.overflowMode,
+      isLocked,
+    };
   }
   return { id: element.id, kind: element.kind, name, isLocked } as DeksElement;
 }

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { applyDeksCommands, assertDeksDocument, type DeksDocument } from "@deks-js/document";
 import { Editor } from "../src/editor/Editor";
-import { createSlide } from "../src/editor/elements";
+import { createElement, createSlide } from "../src/editor/elements";
 import { translator } from "../src/i18n";
 import { createPresentation } from "../src/model";
 
@@ -111,8 +111,8 @@ describe("editor de escritorio", () => {
 
     await user.click(screen.getByRole("button", { name: "Text" }));
     await waitFor(() => expect(saved).toHaveLength(1));
-    expect(saved[0]!.elements[0]).toMatchObject({ kind: "text", name: "Text" });
-    expect(saved[0]!.slides[0]!.states[0]).toMatchObject({ content: "New text" });
+    expect(saved[0]!.elements[0]).toMatchObject({ kind: "text", name: "Text", content: "New text" });
+    expect(saved[0]!.slides[0]!.states[0]).not.toHaveProperty("content");
   });
 
   it("recorre las slides con las flechas izquierda y derecha sin sobrepasar los límites", () => {
@@ -187,6 +187,27 @@ describe("editor de escritorio", () => {
     expect(await screen.findByLabelText("Nombre del elemento")).toHaveValue("Texto");
   });
 
+  it("inserta un rombo canónico y cambia su anchor con presets 3 por 3 sin salto visual", async () => {
+    const user = userEvent.setup();
+    const { saved } = setup();
+
+    await user.click(screen.getByRole("button", { name: "Rombo" }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+    const before = saved.at(-1)!.slides[0]!.states[0]!;
+    await user.click(screen.getByRole("button", { name: "Anchor centro" }));
+
+    await waitFor(() => expect(saved.at(-1)!.slides[0]!.states[0]!.anchor).toEqual({ x: 0.5, y: 0.5 }));
+    const after = saved.at(-1)!.slides[0]!.states[0]!;
+    expect(saved.at(-1)!.elements[0]).toMatchObject({ kind: "shape", shapeKind: "diamond" });
+    expect(after.x).toBe(before.x + before.width / 2);
+    expect(after.y).toBe(before.y + before.height / 2);
+
+    await user.click(screen.getByRole("button", { name: "Anchor arriba izquierda" }));
+    await waitFor(() => expect(saved.at(-1)!.slides[0]!.states[0]!.x).toBe(before.x));
+    const serialized = JSON.parse(JSON.stringify(saved.at(-1)!));
+    expect(serialized.slides[0].states[0]).not.toHaveProperty("anchor");
+  });
+
   it("edita el contenido y la geometría del elemento seleccionado", async () => {
     const user = userEvent.setup();
     const { saved } = setup();
@@ -198,7 +219,8 @@ describe("editor de escritorio", () => {
     await user.type(content, "Hola");
     await waitFor(() => {
       const last = saved.at(-1)!;
-      expect(last.slides[0]!.states[0]!.content).toBe("Hola");
+      expect(last.elements[0]!.content).toBe("Hola");
+      expect(last.slides[0]!.states[0]).not.toHaveProperty("content");
     });
 
     // El número se confirma al aceptar, no en cada tecla: escribir «3» de «300»
@@ -207,6 +229,14 @@ describe("editor de escritorio", () => {
     await user.clear(x);
     await user.type(x, "300{Enter}");
     await waitFor(() => expect(saved.at(-1)!.slides[0]!.states[0]!.x).toBe(300));
+
+    const leftPadding = screen.getByLabelText("Izquierda");
+    await user.clear(leftPadding);
+    await user.type(leftPadding, "24{Enter}");
+    await waitFor(() => expect(saved.at(-1)!.slides[0]!.states[0]!.padding).toEqual({
+      top: 0, right: 0, bottom: 0, left: 24,
+    }));
+    expect(saved.at(-1)!.elements[0]).not.toHaveProperty("padding");
   });
 
   it("agrega, duplica y borra slides conservando el documento válido", async () => {
@@ -580,6 +610,56 @@ describe("animación crop", () => {
       // otro efecto, y el documento la rechaza.
       expect(saved.at(-1)!.slides[0]!.motion?.in?.animation).toEqual({ kind: "crop", edge: "top" });
     });
+  });
+
+  it("advierte cuando crop de entrada no se ejecutará porque la identidad persiste", async () => {
+    const first = createPresentation("Deck", { width: 1600, height: 900 }, "deck", undefined, "Inicio");
+    const slideId = first.slides[0]!.id;
+    const { element, state } = createElement(first, slideId, "text", translator("es"));
+    const second = { ...createSlide(first, "Continuidad"), states: [{
+      ...state,
+      motion: { in: { animation: { kind: "crop" as const, edge: "left" as const } } },
+    }] };
+    const persistent = applyDeksCommands(first, [
+      { type: "define-element", element },
+      { type: "add-element-state", slideId, state },
+      { type: "create-slide", slide: second, afterSlideId: slideId },
+    ]).document;
+    const user = userEvent.setup();
+    setup(persistent);
+
+    await user.click(screen.getByRole("button", { name: "Diapositiva 2: Continuidad" }));
+    await user.click(screen.getAllByRole("button", { name: "Texto" })
+      .find((button) => button.classList.contains("canvas__target"))!);
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Este elemento continúa desde la diapositiva anterior: su rol efectivo es Continuo y Entrada · Cortina no se ejecuta.",
+    );
+  });
+
+  it("advierte cuando crop de salida no se ejecutará porque la identidad persiste", async () => {
+    const first = createPresentation("Deck", { width: 1600, height: 900 }, "deck", undefined, "Inicio");
+    const slideId = first.slides[0]!.id;
+    const { element, state } = createElement(first, slideId, "text", translator("es"));
+    const outgoing = {
+      ...state,
+      motion: { out: { animation: { kind: "crop" as const, edge: "right" as const } } },
+    };
+    const second = { ...createSlide(first, "Continuidad"), states: [state] };
+    const persistent = applyDeksCommands(first, [
+      { type: "define-element", element },
+      { type: "add-element-state", slideId, state: outgoing },
+      { type: "create-slide", slide: second, afterSlideId: slideId },
+    ]).document;
+    const user = userEvent.setup();
+    setup(persistent);
+
+    await user.click(screen.getAllByRole("button", { name: "Texto" })
+      .find((button) => button.classList.contains("canvas__target"))!);
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Este elemento continúa en la diapositiva siguiente: su rol efectivo es Continuo y Salida · Cortina no se ejecuta.",
+    );
   });
 });
 

@@ -26,5 +26,5 @@ empty directory when upgrading; Desktop intentionally never overwrites a prior r
 
 `add_asset` accepts PNG, JPEG, GIF and WebP up to 50 MB, or sanitized static SVG up to 5 MB. It
 validates dimensions and SVG structure before acquiring a project lock, then hashes and stores only
-the canonical bytes. The pinned Core 4.2 preview renders those SVG bytes without allowing browser
+the canonical bytes. The pinned Core preview renders those SVG bytes without allowing browser
 network access.

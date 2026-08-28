@@ -58,7 +58,7 @@ physical `.deks` over 95 MB before reading it or crossing IPC; the WebView and M
 90 MB expanded limit using Core content hashes. A direct `.deks` open validates every embedded image
 before the project becomes visible; a legacy asset is migrated only if it passes the same boundary.
 
-`@deks-js/render-preview@4.2.0` admits the same canonical SVG bytes and renders them in its
+`@deks-js/render-preview` admits the same canonical SVG bytes and renders them in its
 network-blocked browser alongside raster assets. Desktop composes that released preview boundary;
 it does not duplicate or patch the renderer locally.
 

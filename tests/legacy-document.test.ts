@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { assertDeksDocument } from "@deks-js/document";
-import { canonicalId, isLegacyDocument, toCanonicalDocument } from "../src/legacy-document";
+import {
+  canonicalId,
+  isLegacyDocument,
+  toCanonicalDocument,
+  toCanonicalDocumentResult,
+} from "../src/legacy-document";
 import { createPresentation } from "../src/model";
 
 const legacy = {
@@ -47,10 +52,42 @@ describe("proyectos anteriores al contrato canónico", () => {
     expect(document.canvas).toEqual({ width: 1600, height: 900 });
     // La identidad vive una vez; la slide sólo guarda su estado.
     expect(document.elements).toHaveLength(1);
-    expect(document.elements[0]).toMatchObject({ kind: "text", name: "Título", isLocked: false });
+    expect(document.elements[0]).toMatchObject({
+      kind: "text", name: "Título", isLocked: false,
+      content: "Hola", fontFamily: "Poppins",
+      horizontalAlignment: "left", verticalAlignment: "top", overflowMode: "hidden",
+    });
     expect(document.elements[0]).not.toHaveProperty("x");
-    expect(document.slides[0]?.states[0]).toMatchObject({ x: 100, y: 120, content: "Hola" });
+    expect(document.slides[0]?.states[0]).toMatchObject({ x: 100, y: 120, fontSize: 64 });
+    expect(document.slides[0]?.states[0]).not.toHaveProperty("content");
     expect(document.slides[0]).not.toHaveProperty("elements");
+  });
+
+  it("migra v1 sin bloquear, elige la primera slide y describe cada conflicto", () => {
+    const first = structuredClone(legacy.slides[0]);
+    const second = structuredClone(first);
+    second.id = "presentation-1:slide:dos";
+    second.elements[0]!.content = "Otro título";
+    second.elements[0]!.horizontalAlignment = "right";
+
+    const result = toCanonicalDocumentResult({ ...legacy, slides: [first, second] });
+
+    expect(result.fromVersion).toBe(1);
+    expect(result.document.codecVersion).toBe(2);
+    expect(result.document.elements[0]).toMatchObject({
+      content: "Hola",
+      horizontalAlignment: "left",
+    });
+    expect(result.warnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: "text-identity-conflict",
+        elementId: "presentation-1.element.titulo",
+        field: "content",
+        chosenSlideId: "presentation-1.slide.uno",
+        ignored: [expect.objectContaining({ slideId: "presentation-1.slide.dos" })],
+      }),
+      expect.objectContaining({ field: "horizontalAlignment" }),
+    ]));
   });
 
   it("reescribe los IDs que la gramática canónica ya no acepta", () => {
@@ -103,5 +140,10 @@ describe("un documento canónico anterior al contrato vigente", () => {
   it("deja intacto un documento que ya está completo", () => {
     const current = createPresentation("Deck", { width: 1600, height: 900 }, "deck");
     expect(toCanonicalDocument(current)).toEqual(current);
+  });
+
+  it("rechaza una versión futura en vez de degradarla", () => {
+    const future = { ...createPresentation("Future"), codecVersion: 99 };
+    expect(() => toCanonicalDocument(future)).toThrow(/future codecVersion 99/);
   });
 });

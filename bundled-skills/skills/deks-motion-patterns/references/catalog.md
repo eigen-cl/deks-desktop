@@ -21,8 +21,8 @@ the entire effect; two elements cross-fading would look like an ordinary slide c
 
 **Build it.**
 
-1. On the opening checkpoint, give the future title a state that looks like the other
-   list items: same font family, same alignment, same overflow mode, list-sized.
+1. Declare the future title's fixed identity once: content, font family, alignment
+   and overflow mode. On the opening checkpoint, give it a list-sized state.
 2. Give the siblings their own identities. They exist only here.
 3. On the next checkpoint, give the same title identity its heading state. Change
    only geometry and style — never `content`, `fontFamily`, `horizontalAlignment`,
@@ -34,14 +34,21 @@ the entire effect; two elements cross-fading would look like an ordinary slide c
    two-line headline without you touching the text.
 
 ```json
+{"type": "define-element", "element": {
+  "id": "story-title", "kind": "text", "name": "Story title",
+  "content": "Una idea no debería romperse en el camino.",
+  "fontFamily": "Poppins", "horizontalAlignment": "left",
+  "verticalAlignment": "middle", "overflowMode": "hidden", "isLocked": false
+}}
+```
+
+```json
 {"type": "add-element-state", "slideId": "apertura", "state": {
   "elementId": "story-title", "x": 80, "y": 638, "width": 920, "height": 58,
   "rotationDeg": 0, "opacity": 1, "zIndex": 4,
-  "content": "Una idea no debería romperse en el camino.",
-  "fontFamily": "Poppins", "fontSize": 34, "fontWeight": 600,
+  "fontSize": 34, "fontWeight": 600,
   "lineHeight": 1.25, "letterSpacing": 0,
-  "horizontalAlignment": "left", "verticalAlignment": "middle",
-  "overflowMode": "hidden", "fill": "#F2F1EC"
+  "fill": "#F2F1EC"
 }}
 ```
 
@@ -49,11 +56,10 @@ the entire effect; two elements cross-fading would look like an ordinary slide c
 {"type": "add-element-state", "slideId": "contexto", "state": {
   "elementId": "story-title", "x": 80, "y": 188, "width": 920, "height": 224,
   "rotationDeg": 0, "opacity": 1, "zIndex": 4,
-  "content": "Una idea no debería romperse en el camino.",
-  "fontFamily": "Poppins", "fontSize": 64, "fontWeight": 600,
+  "fontSize": 64, "fontWeight": 600,
   "lineHeight": 1.05, "letterSpacing": -1.4,
-  "horizontalAlignment": "left", "verticalAlignment": "middle",
-  "overflowMode": "hidden", "fill": "#F2F1EC"
+  "padding": {"top": 8, "right": 12, "bottom": 8, "left": 12},
+  "fill": "#F2F1EC"
 }}
 ```
 
@@ -67,8 +73,9 @@ The small `delayBeats` matters: the siblings start leaving first, so the promoti
 reads as a consequence rather than a coincidence.
 
 **Do not use it** when the promoted line has to say something different as a title.
-The moment the string changes you get a cross-fade, and the whole effect is gone —
-better then to write the title as its own element and use **replacement**.
+Codec v2 keeps content on identity, so the new phrase must be its own element and
+use **replacement**. For fine visual tuning, move `x`/`y` or adjust padding; never
+change alignment as a positional nudge because alignment is fixed identity.
 
 ---
 
@@ -265,6 +272,11 @@ Neither takes a `distance`: the travel is exactly the element's own extent, so t
 effect is the same at any size. Pick the `edge` for meaning — a figure that climbs
 reads better cropping up from `bottom`; a list item arriving under the one above it
 comes from `top`.
+
+Both require a presence role. If the same `elementId` exists on both checkpoints,
+its role is `morph`; an `in.crop` patch on the destination is therefore inert. Use a
+new identity when something truly arrives, or keep the identity and let its geometry
+morph when it continues.
 
 **Do not** reach for either on something that genuinely enters the scene from
 elsewhere. That is a `slide` with a distance.

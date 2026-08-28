@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { snapBox } from "../src/editor/snapping";
+import { elementAabb, positionedBox, resizeFromHandle } from "../src/editor/elementGeometry";
 
 const canvas = { width: 1000, height: 1000 };
 const base = {
@@ -71,5 +72,26 @@ describe("snapBox", () => {
     expect(box.x).toBe(100);
     expect(box.width).toBe(200);
     expect(box.height).toBe(150);
+  });
+});
+
+describe("geometría de interacción alrededor del anchor", () => {
+  const anchored = {
+    id: "diamond", kind: "shape" as const, shapeKind: "diamond" as const,
+    name: "Rombo", isLocked: false,
+    x: 500, y: 300, width: 200, height: 100, anchor: { x: 0.5, y: 0.5 },
+    rotationDeg: 90, opacity: 1, zIndex: 1,
+    shapeFill: { kind: "solid" as const, color: "#ff7043" }, stroke: "#ff7043", strokeWidth: 0,
+  };
+
+  it("posiciona el overlay desde el anchor y calcula el AABB rotado", () => {
+    expect(positionedBox(anchored)).toEqual({ left: 400, top: 250, width: 200, height: 100 });
+    expect(elementAabb(anchored)).toEqual({ left: 450, top: 200, right: 550, bottom: 400 });
+  });
+
+  it("redimensiona en ejes locales y conserva la esquina opuesta", () => {
+    const resized = resizeFromHandle(anchored, "se", -40, 0);
+    expect(resized).toMatchObject({ width: 200, height: 140, x: 480, y: 300 });
+    expect(elementAabb(resized)).toMatchObject({ left: 410, top: 200, right: 550, bottom: 400 });
   });
 });

@@ -30,6 +30,7 @@ import { SlideRail } from "./SlideRail";
 import {
   createElement,
   createImageElement,
+  createLogicalGroup,
   createSlide,
   duplicateElement,
   duplicateSlide,
@@ -62,6 +63,7 @@ export interface EditorProps {
   /** Bytes que llegaron dentro del mismo archivo `.deks`. */
   assets: readonly DeksFileAsset[];
   onImportAsset(): Promise<{ id: string; mediaType: string; originalFilename?: string } | undefined>;
+  onImportNarrationAsset?(bytes: Uint8Array): Promise<{ id: string; mediaType: "audio/wav"; originalFilename?: string } | undefined>;
   onExit(): void;
 }
 
@@ -88,6 +90,7 @@ export function Editor({
   saveState,
   assets,
   onImportAsset,
+  onImportNarrationAsset = async () => undefined,
   onExit,
 }: EditorProps) {
   const { document: deck, dispatch, pending, conflict, undo, redo, canUndo, canRedo } = useEditorDocument(source, persistence);
@@ -98,7 +101,7 @@ export function Editor({
   const [tab, setTab] = useState<InspectorTab>("slide");
   const [menu, setMenu] = useState<MenuState>();
   const [settings, setSettings] = useState(false);
-  const [presenting, setPresenting] = useState(false);
+  const [presenting, setPresenting] = useState<"manual" | "narrated">();
   const [importingAsset, setImportingAsset] = useState(false);
   const importingAssetRef = useRef(false);
   const navigateToSlide = useCallback((slideId: string) => {
@@ -225,6 +228,46 @@ export function Editor({
     ]).then((ok) => { if (ok) select(element.id); });
   };
 
+  const createGroupFromSelection = (name: string): Promise<boolean> => {
+    if (!selected) return Promise.resolve(false);
+    const { commands } = createLogicalGroup([selected.id], name);
+    return dispatch(commands);
+  };
+
+  const setNarration = (narration: NonNullable<typeof slide.narration>) => {
+    run({ type: "set-slide-narration", slideId: slide.id, narration });
+  };
+
+  const recordNarration = async (bytes: Uint8Array): Promise<boolean> => {
+    if (!slide.narration?.script.trim()) return false;
+    const asset = await onImportNarrationAsset(bytes);
+    if (!asset) return false;
+    const narration = {
+      ...slide.narration,
+      audio: { assetId: asset.id, provenance: "human-recorded" as const },
+    };
+    const commands: DeksCommand[] = [
+      {
+        type: "define-asset",
+        asset: {
+          id: asset.id,
+          kind: "embedded",
+          mediaType: asset.mediaType,
+          ...(asset.originalFilename ? { originalFilename: asset.originalFilename } : {}),
+        },
+      },
+      { type: "set-slide-narration", slideId: slide.id, narration },
+    ];
+    return dispatch(commands);
+  };
+
+  const clearNarration = () => {
+    // El historial hoy versiona documentos, no el almacén de bytes. Retener el
+    // descriptor huérfano permite que Undo restaure y vuelva a empaquetar el
+    // audio original; una compactación futura deberá ser también reversible.
+    run({ type: "clear-slide-narration", slideId: slide.id });
+  };
+
   const reorderSlides = (from: number, direction: -1 | 1) => {
     const ids = deck.slides.map((item) => item.id);
     const target = from + direction;
@@ -327,8 +370,16 @@ export function Editor({
           <IconButton label={t("editor.settings")} onClick={() => setSettings(true)}><Settings aria-hidden="true" /></IconButton>
         </div>
         <div className="editor__bar-end">
-          <button type="button" className="button" onClick={() => setPresenting(true)}>
+          <button type="button" className="button" onClick={() => setPresenting("manual")}>
             <Play aria-hidden="true" /> {t("editor.present")}
+          </button>
+          <button
+            type="button"
+            className="button"
+            disabled={!deck.slides.some((candidate) => candidate.narration?.audio)}
+            onClick={() => setPresenting("narrated")}
+          >
+            <Play aria-hidden="true" /> {t("narration.present")}
           </button>
           <SaveIndicator t={t} state={saveState} />
           <button type="button" className="button" onClick={onExit}>{t("action.exit")}</button>
@@ -390,7 +441,12 @@ export function Editor({
             void dispatch({ type: "add-element-state", slideId: slide.id, state })
               .then((ok) => { if (ok) select(elementId); });
           }}
+          onCreateGroup={createGroupFromSelection}
           onPatchSlide={(patch) => run({ type: "update-slide", slideId: slide.id, patch })}
+          narrationAudioUrl={slide.narration?.audio ? assetUrls[slide.narration.audio.assetId] : undefined}
+          onSetNarration={setNarration}
+          onRecordNarration={recordNarration}
+          onClearNarration={clearNarration}
           onRenameElement={(name) =>
             selected && run({ type: "update-element-identity", elementId: selected.id, patch: { name } })}
           onPatchIdentity={(patch) =>
@@ -416,6 +472,19 @@ export function Editor({
           }}
           onPatchState={(patch) =>
             selected && run({ type: "update-element-state", slideId: slide.id, elementId: selected.id, patch })}
+          onSetElementMotion={(role, patch) =>
+            selected && run({
+              type: "set-motion",
+              scope: { kind: "element", slideId: slide.id, elementId: selected.id },
+              role,
+              patch,
+            })}
+          onClearElementMotion={(role) =>
+            selected && run({
+              type: "clear-motion",
+              scope: { kind: "element", slideId: slide.id, elementId: selected.id },
+              role,
+            })}
           onRemoveFromSlide={() => {
             if (!selected) return;
             setSelectedId(undefined);
@@ -461,7 +530,8 @@ export function Editor({
           document={deck}
           initialSlideId={slide.id}
           assetUrls={assetUrls}
-          onClose={() => setPresenting(false)}
+          narrated={presenting === "narrated"}
+          onClose={() => setPresenting(undefined)}
         />
       )}
     </div>

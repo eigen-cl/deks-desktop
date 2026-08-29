@@ -24,7 +24,9 @@ credentials, arbitrary command arguments or per-presentation paths in that confi
 The runtime makes no Cloud requests. The preview browser blocks network access. Reinstall into a new
 empty directory when upgrading; Desktop intentionally never overwrites a prior runtime.
 
-`add_asset` accepts PNG, JPEG, GIF and WebP up to 50 MB, or sanitized static SVG up to 5 MB. It
-validates dimensions and SVG structure before acquiring a project lock, then hashes and stores only
-the canonical bytes. The pinned Core preview renders those SVG bytes without allowing browser
-network access.
+`add_asset` accepts PNG, JPEG, GIF and WebP up to 50 MB, sanitized static SVG up to 5 MB, or
+canonical MPEG-1 Layer III / PCM RIFF-WAV narration audio up to 50 MB and ten minutes. It validates
+the real bytes before acquiring a project lock, then hashes and stores only the canonical bytes.
+Use `set-slide-narration` and `clear-slide-narration` through `apply_commands`; no filesystem path
+or caller-declared MIME enters either flow. The pinned Core preview renders visual assets without
+allowing browser network access.

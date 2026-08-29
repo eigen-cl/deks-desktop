@@ -8,7 +8,7 @@ import { ProjectStore } from "../mcp/project-store.mjs";
 
 const document = {
   format: "deks",
-  codecVersion: 2,
+  codecVersion: 3,
   id: "presentation-1",
   name: "Agent demo",
   revision: 0,
@@ -40,6 +40,30 @@ function legacyV1Document(input = document) {
 
 const PNG_BYTES = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAEAQH/6WQzgAAAAABJRU5ErkJggg==", "base64");
 const OTHER_PNG_BYTES = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+
+function wavPcm16(sampleCount = 2_400, sampleRate = 24_000) {
+  const bytes = Buffer.alloc(44 + sampleCount * 2);
+  bytes.write("RIFF", 0, "ascii");
+  bytes.writeUInt32LE(bytes.length - 8, 4);
+  bytes.write("WAVE", 8, "ascii");
+  bytes.write("fmt ", 12, "ascii");
+  bytes.writeUInt32LE(16, 16);
+  bytes.writeUInt16LE(1, 20);
+  bytes.writeUInt16LE(1, 22);
+  bytes.writeUInt32LE(sampleRate, 24);
+  bytes.writeUInt32LE(sampleRate * 2, 28);
+  bytes.writeUInt16LE(2, 32);
+  bytes.writeUInt16LE(16, 34);
+  bytes.write("data", 36, "ascii");
+  bytes.writeUInt32LE(sampleCount * 2, 40);
+  return bytes;
+}
+
+function canonicalMp3Frame() {
+  const frame = Buffer.alloc(417);
+  frame.set([0xff, 0xfb, 0x90, 0x00]);
+  return frame;
+}
 
 const SVG_SOURCE = Buffer.from(`
   <svg height="50px" width="100" xmlns="http://www.w3.org/2000/svg">
@@ -102,6 +126,43 @@ test("a command batch atomically replaces one .deks file and writes external hid
   });
   await assert.rejects(access(join(root, `.${basename(file)}.lock`)));
   assert.equal((await readFile(file)).includes(Buffer.from(root)), false, "the portable archive must not contain a local path");
+});
+
+test("apply_commands accepts parentId null as JSON ungroup and omits it from the portable document", async () => {
+  const { file, store } = await fixture();
+  const grouped = await store.applyCommands({
+    presentationId: document.id,
+    expectedRevision: 0,
+    idempotencyKey: "group-element-1",
+    commands: [
+      { type: "define-element", element: { id: "hero", kind: "group", name: "Hero", isLocked: false } },
+      {
+        type: "define-element",
+        element: { id: "title", kind: "shape", shapeKind: "rectangle", name: "Title", parentId: "hero", isLocked: false },
+      },
+      {
+        type: "add-element-state",
+        slideId: document.slides[0].id,
+        state: {
+          elementId: "title", x: 10, y: 10, width: 100, height: 50,
+          rotationDeg: 0, opacity: 1, zIndex: 1,
+          shapeFill: { kind: "solid", color: "#111111" }, stroke: "#111111", strokeWidth: 0,
+        },
+      },
+    ],
+  });
+  assert.equal(grouped.document.slides[0].states.some(({ elementId }) => elementId === "hero"), false);
+
+  const ungrouped = await store.applyCommands({
+    presentationId: document.id,
+    expectedRevision: 1,
+    idempotencyKey: "ungroup-element-1",
+    commands: [{ type: "update-element-identity", elementId: "title", patch: { parentId: null } }],
+  });
+
+  assert.equal(Object.hasOwn(ungrouped.document.elements.find(({ id }) => id === "title"), "parentId"), false);
+  const reopened = await decoded(file);
+  assert.equal(Object.hasOwn(reopened.document.elements.find(({ id }) => id === "title"), "parentId"), false);
 });
 
 test("apply_commands preserves every embedded asset while rewriting the manifest", async () => {
@@ -219,7 +280,66 @@ test("add_asset embeds bytes inside the same .deks file before declaring the des
   assert.deepEqual(Buffer.from(reopened.assets[0].bytes), PNG_BYTES);
 });
 
-test("add_asset types the bytes itself and refuses anything that is not a supported image", async () => {
+test("add_asset sniffs portable WAV bytes and apply_commands sets and clears slide narration", async () => {
+  const { file, store } = await fixture();
+  const wav = wavPcm16();
+  const added = await store.addAsset({
+    presentationId: document.id,
+    expectedRevision: 0,
+    idempotencyKey: "narration-audio-1",
+    base64: wav.toString("base64"),
+    originalFilename: "voz.wav",
+  });
+  assert.equal(added.asset.mediaType, "audio/wav");
+
+  const narrated = await store.applyCommands({
+    presentationId: document.id,
+    expectedRevision: 1,
+    idempotencyKey: "narration-set-01",
+    commands: [{
+      type: "set-slide-narration",
+      slideId: document.slides[0].id,
+      narration: {
+        script: "Presentamos esta diapositiva.",
+        pauseBeforeMs: 200,
+        pauseAfterMs: 350,
+        audio: { assetId: added.asset.id, provenance: "human-recorded" },
+      },
+    }],
+  });
+  assert.deepEqual(narrated.document.slides[0].narration.audio, {
+    assetId: added.asset.id,
+    provenance: "human-recorded",
+  });
+
+  const cleared = await store.applyCommands({
+    presentationId: document.id,
+    expectedRevision: 2,
+    idempotencyKey: "narration-clear-1",
+    commands: [
+      { type: "clear-slide-narration", slideId: document.slides[0].id },
+      { type: "remove-asset", assetId: added.asset.id },
+    ],
+  });
+  assert.equal("narration" in cleared.document.slides[0], false);
+  assert.equal(cleared.document.assets.length, 0);
+  const reopened = await decoded(file);
+  assert.equal(reopened.assets.length, 0);
+});
+
+test("add_asset also sniffs canonical MPEG-1 Layer III without caller-declared MIME", async () => {
+  const { store } = await fixture();
+  const added = await store.addAsset({
+    presentationId: document.id,
+    expectedRevision: 0,
+    idempotencyKey: "narration-mp3-01",
+    base64: canonicalMp3Frame().toString("base64"),
+    originalFilename: "voz.bin",
+  });
+  assert.equal(added.asset.mediaType, "audio/mpeg");
+});
+
+test("add_asset types the bytes itself and refuses anything that is not a supported portable asset", async () => {
   const { file, store } = await fixture();
   const before = await readFile(file);
   await assert.rejects(store.addAsset({
@@ -324,7 +444,7 @@ test("legacy expanded folders remain readable and writable without being deleted
   const store = await ProjectStore.fromRoot(root);
   const migrated = await store.getPresentation(document.id);
   assert.equal(migrated.name, document.name);
-  assert.equal(migrated.codecVersion, 2);
+  assert.equal(migrated.codecVersion, 3);
   await store.applyCommands({
     presentationId: document.id,
     expectedRevision: 0,
@@ -333,7 +453,7 @@ test("legacy expanded folders remain readable and writable without being deleted
   });
   const persisted = JSON.parse(await readFile(join(project, "document.deks.json"), "utf8"));
   assert.equal(persisted.name, "Still compatible");
-  assert.equal(persisted.codecVersion, 2);
+  assert.equal(persisted.codecVersion, 3);
   assert.ok((await readdir(root)).includes("legacy-project"));
 });
 

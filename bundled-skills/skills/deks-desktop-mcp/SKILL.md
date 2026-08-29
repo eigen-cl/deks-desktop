@@ -1,6 +1,6 @@
 ---
 name: deks-desktop-mcp
-description: "Operate the local DEKS Desktop MCP over portable `.deks` files on disk: how the app connects an agent from Settings → Agents, the five tools it exposes (list_presentations, get_presentation, render_slide_preview, add_asset, apply_commands), the DEKS Core command envelope with kebab-case `type` and camelCase payloads, embedding image bytes with add_asset, expected revisions and idempotency keys, the sibling file lock and path_not_authorized, local visual QA in isolated Chromium, and the explicit list of Cloud capabilities that do not exist here. Use it whenever the discovered tool set is those five, whenever apply_commands takes `type` instead of `command`, or whenever the deck is a local `.deks` file. Pair with $deks-presentations for the document contract itself."
+description: "Operate the local DEKS Desktop MCP over portable `.deks` files on disk: how the app connects an agent from Settings → Agents, the five tools it exposes (list_presentations, get_presentation, render_slide_preview, add_asset, apply_commands), the DEKS Core command envelope with kebab-case `type` and camelCase payloads, embedding image or narration audio bytes with add_asset, expected revisions and idempotency keys, the sibling file lock and path_not_authorized, local visual QA in isolated Chromium, and the explicit list of Cloud capabilities that do not exist here. Use it whenever the discovered tool set is those five, whenever apply_commands takes `type` instead of `command`, or whenever the deck is a local `.deks` file. Pair with $deks-presentations for the document contract itself."
 ---
 
 # Operate the DEKS Desktop MCP
@@ -10,10 +10,11 @@ authorized root folder**. Presentations never leave the disk and there is no tok
 and no account. A presentation is one direct `.deks` file whose strict manifest and
 embedded assets are read and written by `@deks-js/document`.
 
-The current canonical manifest is codec v2 (`codecVersion: 2`). Desktop decodes
-an unmarked or explicit v1 file through Core's v1 → v2 migration before exposing
+The current portable manifest is codec v3 (`codecVersion: 3`). Desktop decodes
+an unmarked or explicit v1 file through Core's v1 → v2 → v3 migration, and v2
+through v2 → v3, before exposing
 it, using the first state in slide order when legacy fixed text fields conflict.
-Writes always persist v2; a future codec version is rejected rather than guessed.
+Writes always persist v3; a future codec version is rejected rather than guessed.
 
 The document contract — what the fields mean and what values they take — lives in
 `$deks-presentations`. This skill is only about reaching it through this server.
@@ -40,7 +41,7 @@ performs in the app, not something to work around.
 | `list_presentations()` | Valid local presentations inside the authorized root. Read-only. |
 | `get_presentation(presentation_id)` | The canonical document and its current revision. Read-only. |
 | `render_slide_preview(presentation_id, slide_id, expected_revision?, width?)` | Renders one slide with DEKS Core in isolated Chromium. Returns a PNG plus DOM measurements and visual-QA issues. `width` is `1280` or `1600`, default `1600`. Read-only. |
-| `add_asset(presentation_id, expected_revision, idempotency_key, base64, original_filename?)` | Admits image bytes, embeds their canonical form and declares the asset. Returns the asset ID to reference from an image state. |
+| `add_asset(presentation_id, expected_revision, idempotency_key, base64, original_filename?)` | Admits image or WAV/MP3 narration bytes, embeds their canonical form and declares the asset. Returns the asset ID to reference from an image state or slide narration. |
 | `apply_commands(presentation_id, expected_revision, idempotency_key, commands)` | 1–100 DEKS Core commands applied as one local revision. |
 
 That is the whole surface. Everything that mutates the deck goes through
@@ -74,10 +75,11 @@ the object.
 {"type": "add-element-state", "slideId": "s2", "state": {"elementId": "title", "x": 80, "y": 188, "…": "…"}}
 ```
 
-The fifteen types are `update-document`, `define-asset`, `remove-asset`,
+The seventeen types are `update-document`, `define-asset`, `remove-asset`,
 `define-element`, `update-element-identity`, `delete-element`, `create-slide`,
 `update-slide`, `reorder-slides`, `delete-slide`, `add-element-state`,
-`update-element-state`, `remove-element-state`, `set-motion`, `clear-motion`.
+`update-element-state`, `remove-element-state`, `set-motion`, `clear-motion`,
+`set-slide-narration`, `clear-slide-narration`.
 
 Note what that means in practice: there is no `create_element` that also places the
 element. You `define-element` the identity, then `add-element-state` its state on a
@@ -91,10 +93,16 @@ or padding on the state.
 
 ## Assets
 
-`add_asset` takes raw image bytes as base64. It accepts PNG, JPEG, GIF or WebP up
+`add_asset` takes raw asset bytes as base64. It accepts PNG, JPEG, GIF or WebP up
 to 50 MB, or a static safe SVG up to 5 MB. Every image is at most 16,384 units on
 either side and its logical width × height is at most 40 megapixels. **The media
 type is decided by the bytes, not by what you declare.**
+
+For slide narration it also accepts canonical `audio/wav` integer PCM (16/24
+bit) or frame-only `audio/mpeg` MPEG-1 Layer III, at most 50 MB and 10 minutes,
+with 1–2 channels at 8–48 kHz. Recorded Desktop audio normally arrives as mono
+24 kHz/16-bit WAV. Do not send browser WebM/MP4 capture bytes, ID3 metadata,
+filesystem paths or remote audio URLs.
 
 Safe SVG means DEKS's parsed subset, not arbitrary markup: no scripts, events,
 CSS/style, fonts or `<text>`, `foreignObject`, nested `<image>`, `<use>`, SMIL,
@@ -103,7 +111,7 @@ references. The host emits canonical UTF-8 SVG before hashing and embedding it.
 
 `add_asset` packages the admitted bytes in the same `.deks` by content hash and
 declares the descriptor, so you do not also send `define-asset`. Use the returned
-asset ID in an image state's `assetId`. Never send uninspected bytes through
+asset ID in an image state's `assetId` or a narration's `audio.assetId`. Never send uninspected bytes through
 `define-asset`; it only describes bytes that are already present.
 
 Keep the batch and the asset separate: `add_asset` consumes a revision of its own.

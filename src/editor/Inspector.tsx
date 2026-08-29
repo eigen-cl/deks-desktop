@@ -1,10 +1,12 @@
-import { resolveElementMotion, type Anchor, type DeksDocument, type DeksElement, type DeksElementState, type DeksSlide, type SlideBackground } from "@deks-js/document";
+import { resolveElementMotion, type Anchor, type DeksCommand, type DeksDocument, type DeksElement, type DeksElementState, type DeksSlide, type DeksSlideNarration, type MotionRole, type MotionRolePatch, type SlideBackground } from "@deks-js/document";
 import { Lock, LockOpen, Trash2 } from "lucide-react";
 import { clampOpacity, type EditorElement } from "./elements";
 import { ElementList } from "./ElementList";
 import { ColorField, NumberField, SelectField, TextAreaField, TextField, Toggle } from "../ui/fields";
 import type { Translate } from "../i18n";
 import { LucideIconPicker } from "./LucideIconPicker";
+import { ElementMotion } from "./SlideMotion";
+import { SlideNarration } from "./SlideNarration";
 
 export type InspectorTab = "slide" | "element" | "elements";
 
@@ -18,13 +20,20 @@ export interface InspectorProps {
   onTabChange(tab: InspectorTab): void;
   onSelectElement(elementId: string): void;
   onAddExisting(elementId: string, sourceSlideId: string): void;
+  onCreateGroup(name: string): Promise<boolean>;
   onPatchSlide(patch: Partial<Omit<DeksSlide, "id" | "states">>): void;
+  narrationAudioUrl?: string;
+  onSetNarration(narration: DeksSlideNarration): void;
+  onRecordNarration(bytes: Uint8Array): Promise<boolean>;
+  onClearNarration(): void;
   onRenameElement(name: string): void;
-  onPatchIdentity(patch: Partial<Omit<DeksElement, "id" | "kind">>): void;
+  onPatchIdentity(patch: Extract<DeksCommand, { type: "update-element-identity" }>["patch"]): void;
   onLockElement(isLocked: boolean): void;
   onAnimateMagnitude(animateMagnitude: { in: boolean; morph: boolean; out: boolean }): void;
   onSetAnchor(anchor?: Anchor): void;
   onPatchState(patch: Partial<Omit<DeksElementState, "elementId">>): void;
+  onSetElementMotion(role: MotionRole, patch: MotionRolePatch): void;
+  onClearElementMotion(role: MotionRole): void;
   onRemoveFromSlide(): void;
   onDeleteEverywhere(): void;
 }
@@ -53,13 +62,20 @@ export function Inspector({
   onTabChange,
   onSelectElement,
   onAddExisting,
+  onCreateGroup,
   onPatchSlide,
+  narrationAudioUrl,
+  onSetNarration,
+  onRecordNarration,
+  onClearNarration,
   onRenameElement,
   onPatchIdentity,
   onLockElement,
   onAnimateMagnitude,
   onSetAnchor,
   onPatchState,
+  onSetElementMotion,
+  onClearElementMotion,
   onRemoveFromSlide,
   onDeleteEverywhere,
 }: InspectorProps) {
@@ -106,7 +122,21 @@ export function Inspector({
         aria-labelledby={`inspector-tab-${tab}`}
         tabIndex={0}
       >
-        {tab === "slide" && <SlideProperties t={t} deck={deck} slide={slide} disabled={disabled} onPatch={onPatchSlide} />}
+        {tab === "slide" && (
+          <>
+            <SlideProperties t={t} deck={deck} slide={slide} disabled={disabled} onPatch={onPatchSlide} />
+            <SlideNarration
+              slideId={slide.id}
+              t={t}
+              narration={slide.narration}
+              audioUrl={narrationAudioUrl}
+              disabled={disabled}
+              onSet={onSetNarration}
+              onRecord={onRecordNarration}
+              onClear={onClearNarration}
+            />
+          </>
+        )}
         {tab === "element" && (selected
           ? (
             <ElementProperties
@@ -121,6 +151,8 @@ export function Inspector({
               onAnimateMagnitude={onAnimateMagnitude}
               onSetAnchor={onSetAnchor}
               onPatch={onPatchState}
+              onSetMotion={onSetElementMotion}
+              onClearMotion={onClearElementMotion}
               onRemoveFromSlide={onRemoveFromSlide}
               onDeleteEverywhere={onDeleteEverywhere}
             />
@@ -135,6 +167,7 @@ export function Inspector({
             disabled={disabled}
             onSelect={onSelectElement}
             onAddExisting={onAddExisting}
+            onCreateGroup={onCreateGroup}
           />
         )}
       </div>
@@ -236,6 +269,8 @@ function ElementProperties({
   onAnimateMagnitude,
   onSetAnchor,
   onPatch,
+  onSetMotion,
+  onClearMotion,
   onRemoveFromSlide,
   onDeleteEverywhere,
 }: {
@@ -245,12 +280,14 @@ function ElementProperties({
   element: EditorElement;
   disabled: boolean;
   onRename(name: string): void;
-  onPatchIdentity(patch: Partial<Omit<DeksElement, "id" | "kind">>): void;
+  onPatchIdentity(patch: Extract<DeksCommand, { type: "update-element-identity" }>["patch"]): void;
   onLock(isLocked: boolean): void;
   /** Los toggles de conteo viven en la identidad, no en el estado de la slide. */
   onAnimateMagnitude(animateMagnitude: { in: boolean; morph: boolean; out: boolean }): void;
   onSetAnchor(anchor?: Anchor): void;
   onPatch(patch: Partial<Omit<DeksElementState, "elementId">>): void;
+  onSetMotion(role: MotionRole, patch: MotionRolePatch): void;
+  onClearMotion(role: MotionRole): void;
   onRemoveFromSlide(): void;
   onDeleteEverywhere(): void;
 }) {
@@ -265,6 +302,18 @@ function ElementProperties({
   const resolvedMotion = resolveElementMotion(deck, slide.id, element.id);
   const unreachableIncomingCrop = continuesFromPrevious && resolvedMotion.in.animation.kind === "crop";
   const unreachableOutgoingCrop = continuesToNext && resolvedMotion.out.animation.kind === "crop";
+  const groups = deck.elements.filter(({ kind }) => kind === "group");
+  const groupLabel = (group: DeksElement) => {
+    const path = [group.name];
+    let parentId = group.parentId;
+    while (parentId !== undefined) {
+      const parent = deck.elements.find(({ id }) => id === parentId);
+      if (!parent || parent.kind !== "group") break;
+      path.unshift(parent.name);
+      parentId = parent.parentId;
+    }
+    return path.join(" / ");
+  };
 
   return (
     <>
@@ -272,6 +321,18 @@ function ElementProperties({
         <legend>{t("editor.identityScope")}</legend>
         <p className="panel__hint" id={`identity-scope-${element.id}`}>{t("editor.identityScopeHint")}</p>
         <TextField label={t("editor.elementName")} value={element.name} disabled={disabled} onChange={onRename} />
+        <SelectField
+          label={t("editor.logicalGroup")}
+          value={element.parentId ?? "__ungrouped__"}
+          disabled={disabled}
+          options={[
+            { value: "__ungrouped__", label: t("editor.ungrouped") },
+            ...groups.map((group) => ({ value: group.id, label: groupLabel(group) })),
+          ]}
+          onValueChange={(parentId) => onPatchIdentity({
+            parentId: parentId === "__ungrouped__" ? null : parentId,
+          })}
+        />
         <button
           type="button"
           className="panel__inline-action"
@@ -378,6 +439,16 @@ function ElementProperties({
           </div>
         </div>
       </section>
+
+      <ElementMotion
+        t={t}
+        document={deck}
+        slideId={slide.id}
+        elementId={element.id}
+        disabled={disabled}
+        onSet={onSetMotion}
+        onClear={onClearMotion}
+      />
 
       {unreachableIncomingCrop && (
         <p role="status" className="panel__warning">

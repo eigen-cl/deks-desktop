@@ -4,6 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import {
   createDeksFile,
   DEKS_FILE_MEDIA_TYPE,
+  inspectAndNormalizeDeksAsset,
   inspectAndNormalizeDeksImage,
   normalizeDeksFileAssets,
   readDeksFile,
@@ -166,7 +167,7 @@ export async function migrateLegacyProject(path: string): Promise<OpenProject> {
       assetId: descriptor.id,
       mediaType: descriptor.mediaType,
     });
-    const inspected = inspectAndNormalizeDeksImage(new Uint8Array(bytes), descriptor.mediaType);
+    const inspected = inspectAndNormalizeDeksAsset(new Uint8Array(bytes), descriptor.mediaType);
     assets.push({ id: descriptor.id, mediaType: inspected.mediaType, bytes: inspected.bytes, contentHash: "" });
   }
   assertDeksArchiveExpandedSize(document, assets);
@@ -192,6 +193,7 @@ export function readProjectCover(path: string): Promise<DeksDocument> {
     const first = document.slides[0];
     const stateIds = new Set(first?.states.map(({ elementId }) => elementId) ?? []);
     const assetIds = new Set(first?.states.flatMap((state) => "assetId" in state ? [state.assetId] : []) ?? []);
+    if (first?.narration?.audio) assetIds.add(first.narration.audio.assetId);
     return {
       ...document,
       elements: document.elements.filter(({ id }) => stateIds.has(id)),
@@ -238,6 +240,22 @@ export function importAsset(sourcePath: string): Promise<ImportedAssetBytes> {
     const inspected = inspectAndNormalizeDeksImage(new Uint8Array(asset.bytes), asset.mediaType);
     return { ...asset, mediaType: inspected.mediaType, bytes: inspected.bytes };
   });
+}
+
+/**
+ * La grabación ya fue convertida a WAV por el WebView. Core vuelve a olfatear
+ * los bytes antes de que el host los agregue al conjunto que empaquetará: el
+ * MIME declarado por la UI nunca es autoridad.
+ */
+export function importNarrationAsset(bytes: Uint8Array): ImportedAssetBytes & { mediaType: "audio/wav" } {
+  const inspected = inspectAndNormalizeDeksAsset(bytes, "audio/wav");
+  if (inspected.mediaType !== "audio/wav") throw new Error("asset_media_type_unsupported");
+  return {
+    id: `narration-${crypto.randomUUID()}`,
+    mediaType: inspected.mediaType,
+    originalFilename: "narration.wav",
+    bytes: inspected.bytes,
+  };
 }
 
 export async function chooseImage(title: string, filterName: string): Promise<string | undefined> {

@@ -32,6 +32,7 @@ const ASSETS_DIR: &str = "assets";
 /// de que los bytes puedan entrar al documento.
 const MAX_RASTER_ASSET_BYTES: usize = 50_000_000;
 const MAX_SVG_ASSET_BYTES: usize = 5_000_000;
+const MAX_AUDIO_ASSET_BYTES: usize = 50_000_000;
 const MAX_DEKS_FILE_BYTES: u64 = 95_000_000;
 /// Carpeta por defecto dentro de Documentos. La app la crea sola: pedirle una
 /// ubicación a quien recién abre DEKS es pedirle una decisión antes de tener
@@ -706,6 +707,12 @@ fn sniff_media_type(bytes: &[u8]) -> Option<&'static str> {
     if bytes.len() > 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
         return Some("image/webp");
     }
+    if bytes.len() > 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WAVE" {
+        return Some("audio/wav");
+    }
+    if bytes.len() >= 2 && bytes[0] == 0xff && bytes[1] & 0xe0 == 0xe0 {
+        return Some("audio/mpeg");
+    }
     let prefix = &bytes[..bytes.len().min(4096)];
     if prefix.windows(4).any(|window| window == b"<svg") {
         return Some("image/svg+xml");
@@ -722,6 +729,8 @@ fn asset_extension(media_type: &str) -> Option<&'static str> {
         "image/gif" => Some("gif"),
         "image/webp" => Some("webp"),
         "image/svg+xml" => Some("svg"),
+        "audio/mpeg" => Some("mp3"),
+        "audio/wav" => Some("wav"),
         _ => None,
     }
 }
@@ -1179,6 +1188,9 @@ fn read_image_file(source_path: String) -> Result<ImportedImageBytes, String> {
     let media_type = sniff_media_type(&bytes)
         .or(extension_is_svg.then_some("image/svg+xml"))
         .ok_or_else(|| "asset_media_type_unsupported".to_string())?;
+    if !media_type.starts_with("image/") {
+        return Err("asset_media_type_unsupported".into());
+    }
     if media_type == "image/svg+xml" && bytes.len() > MAX_SVG_ASSET_BYTES {
         return Err("asset_too_large".into());
     }
@@ -1205,7 +1217,9 @@ fn read_image_file(source_path: String) -> Result<ImportedImageBytes, String> {
 fn read_asset(path: String, asset_id: String, media_type: String) -> Result<Vec<u8>, String> {
     let path = project_path(&path)?;
     let file = asset_file(&path, &asset_id, &media_type)?;
-    let max_bytes = if media_type == "image/svg+xml" {
+    let max_bytes = if media_type.starts_with("audio/") {
+        MAX_AUDIO_ASSET_BYTES
+    } else if media_type == "image/svg+xml" {
         MAX_SVG_ASSET_BYTES
     } else {
         MAX_RASTER_ASSET_BYTES
@@ -2064,6 +2078,9 @@ mod tests {
         assert!(asset_file(project.path(), "ok-1", "image/webp")
             .unwrap()
             .ends_with("assets/ok-1.webp"));
+        assert!(asset_file(project.path(), "voice-1", "audio/wav")
+            .unwrap()
+            .ends_with("assets/voice-1.wav"));
     }
 
     #[test]

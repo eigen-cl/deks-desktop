@@ -22,7 +22,7 @@ A `morph` is resolved from the slide the element is arriving at.
 
 ### Text replacement is `out` then `in`, not one reused identity
 
-In codec v2, `content`, font family, alignments and overflow mode live once on a
+Since codec v2 (including current v3), `content`, font family, alignments and overflow mode live once on a
 text identity and cannot vary by checkpoint. Preserve that identity only while the
 same text continues. When the next checkpoint introduces a new phrase, claim,
 label or semantic text type, declare a new identity: the old text is `out` and the

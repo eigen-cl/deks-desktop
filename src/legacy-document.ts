@@ -65,7 +65,8 @@ function legacyV1Document(value: unknown): unknown {
       const state: Record<string, unknown> = { elementId: id };
       for (const [key, entry] of Object.entries(element)) {
         if (key === "id") continue;
-        if (IDENTITY_KEYS.has(key)) identity[key] = entry;
+        if (key === "parentId") identity[key] = canonicalId(String(entry));
+        else if (IDENTITY_KEYS.has(key)) identity[key] = entry;
         else state[key] = entry;
       }
       identity.isLocked = Boolean(element.isLocked);

@@ -8,7 +8,7 @@ import { VisualQaService } from "../mcp/visual-qa.mjs";
 
 const document = {
   format: "deks",
-  codecVersion: 2,
+  codecVersion: 3,
   id: "browser-preview",
   name: "Browser preview",
   revision: 1,

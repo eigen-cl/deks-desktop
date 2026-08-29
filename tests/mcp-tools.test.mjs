@@ -62,7 +62,15 @@ test("add_asset takes bytes, never a filesystem path", () => {
   assert.deepEqual(tool.inputSchema.required, ["presentation_id", "expected_revision", "idempotency_key", "base64"]);
   // El tipo lo deciden los bytes: no hay `media_type` que un agente pueda mentir.
   assert.equal("media_type" in tool.inputSchema.properties, false);
+  assert.match(tool.description, /MP3.*WAV/);
   assert.equal(tool.annotations.readOnlyHint, false);
+});
+
+test("apply_commands publishes the two portable slide narration commands", () => {
+  const tool = MCP_TOOLS.find(({ name }) => name === "apply_commands");
+  const commandTypes = tool.inputSchema.properties.commands.items.properties.type.enum;
+  assert.ok(commandTypes.includes("set-slide-narration"));
+  assert.ok(commandTypes.includes("clear-slide-narration"));
 });
 
 test("add_asset reaches the store with the caller's revision and idempotency key", async () => {

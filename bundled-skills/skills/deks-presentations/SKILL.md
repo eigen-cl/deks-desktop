@@ -1,6 +1,6 @@
 ---
 name: deks-presentations
-description: "The DEKS presentation contract, independent of how you reach it: the document model, slides as checkpoints, stable element identities and their typed states, the palette roles, the complete motion contract (in/out/morph; none, fade, slide, crop, wipe, scale, morph, cut; beats and the two delays that add), the number and icon elements, validation invariants, and the rules for writing safely with expected revisions and idempotency. Use it for any DEKS read or write, any question about what a field means or what a value is allowed to be, and before planning mutations. Route to $deks-cloud-mcp or $deks-desktop-mcp for the exact tools of the host you are on, to $design-deks-presentations to decide what the deck should say, and to $deks-motion-patterns to choose a concrete choreography."
+description: "The DEKS presentation contract, independent of how you reach it: the codec, document model, slides as checkpoints, portable narration/audio, named logical element groups and collision scopes, stable identities and typed states, palette roles, motion, validation, and safe revision-aware writes. Use it for any DEKS read or write, fields or allowed values, narration/audio portability, grouping/collision semantics, and before planning mutations. Route to $deks-cloud-mcp or $deks-desktop-mcp for host tools, to $design-deks-presentations for narrative/design, and to $deks-motion-patterns for choreography."
 ---
 
 # The DEKS presentation contract
@@ -32,12 +32,24 @@ Inspect the discovery result rather than guessing. Do not call a tool because an
 
 A **document** owns `codecVersion`, a canvas, a palette, one motion declaration,
 one `motionBeatMs`, its assets, its element identities, and an ordered list of slides.
-The current canonical codec is v2. An absent version or explicit v1 is legacy
-input and must pass through the host's v1 → v2 decoder before any edit; never
+The current portable codec is v3. An absent version or explicit v1 is legacy
+input and must pass through the host's v1 → v2 → v3 decoder before any edit; v2
+also migrates explicitly to v3. Never
 remove, guess or hand-edit the version to bypass that migration. Future versions
 must be rejected until a migration step exists.
 
-A **slide** is a checkpoint: a named, complete state of the scene. It owns a background, an optional motion patch, and a list of **element states**.
+A **slide** is a checkpoint: a named, complete state of the scene. It owns a
+background, an optional motion patch, an optional portable narration, and a list
+of **element states**. Narration is `script`, `pauseBeforeMs`, `pauseAfterMs` and
+optionally `audio: {assetId, provenance}`. Its audio must be an embedded admitted
+WAV/MP3 asset and provenance is `human-recorded` or `synthetic`; provider IDs,
+credits, voice profiles and consent records are host
+state and never enter the `.deks`.
+
+During the staged rollout, Desktop/local Web understand v3 while the deployed
+Cloud MCP still exposes v2 and has no narration commands. Inspect the host skill:
+never send portable narration to Cloud until `$deks-cloud-mcp` says that surface
+exists.
 
 An **element identity** is declared once on the document (`id`, `kind`, `name`)
 and carries no geometry. A text identity also owns its fixed authored content and
@@ -46,6 +58,11 @@ layout mode: `content`, `fontFamily`, `horizontalAlignment`,
 position, size, rotation, opacity, z-index, continuous style, and an optional
 motion patch. Text state may add the animatable exact four-sided
 `padding: {top,right,bottom,left}`; omission means four zeros.
+
+A named `group` identity is a logical folder. Membership is the child identity's
+`parentId`; it never makes geometry relative or transforms descendants. Elements
+sharing the same non-null outermost group are excluded from collision diagnostics,
+while overlaps across group boundaries remain candidates.
 
 A state may also declare a normalized `anchor: {x,y}` as its position and rotation
 pivot. Omission remains the legacy top-left pivot. Shape identities include

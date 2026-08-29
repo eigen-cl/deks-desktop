@@ -78,7 +78,7 @@ describe("proyecto Desktop file-first", () => {
 
     const opened = await migrateLegacyProject("/decks/legacy-folder");
 
-    expect(opened.document.codecVersion).toBe(2);
+    expect(opened.document.codecVersion).toBe(3);
     expect(opened.document.elements[0]).toMatchObject({ content: "First" });
     expect(opened.warnings).toEqual([
       expect.objectContaining({

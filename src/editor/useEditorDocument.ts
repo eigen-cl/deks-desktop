@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { applyDeksCommands, type DeksCommand, type DeksDocument } from "@deks-js/document";
+import { type DeksCommand, type DeksDocument } from "@deks-js/document";
+import { applyEditorCommands } from "./commands";
 
 export interface EditorPersistence {
   save(
@@ -49,7 +50,7 @@ export function useEditorDocument(source: DeksDocument, persistence: EditorPersi
     const previous = document;
     let next;
     try {
-      next = applyDeksCommands(previous, commands);
+      next = applyEditorCommands(previous, commands);
     } catch {
       // Un comando inválido no llega al disco ni ensucia la copia visible.
       return false;

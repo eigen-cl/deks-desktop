@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useId, useState, type KeyboardEvent } from "react";
 import { RotateCcw } from "lucide-react";
 import {
   effectiveDelayMs,
   effectiveDurationMs,
+  resolveElementMotion,
   resolveSlideMotion,
   type DeksDocument,
   type Easing,
@@ -21,21 +22,53 @@ export interface SlideMotionProps {
   onClear(role: MotionRole): void;
 }
 
+export interface ElementMotionProps {
+  t: Translate;
+  document: DeksDocument;
+  slideId: string;
+  elementId: string;
+  disabled?: boolean;
+  onSet(role: MotionRole, patch: MotionRolePatch): void;
+  onClear(role: MotionRole): void;
+}
+
+interface MotionEditorProps {
+  t: Translate;
+  motionBeatMs: number;
+  motion: DeksDocument["motion"];
+  declared(role: MotionRole): boolean;
+  title: string;
+  inheritedLabel: string;
+  declaredLabel: string;
+  regionLabel?: string;
+  disabled: boolean;
+  onSet(role: MotionRole, patch: MotionRolePatch): void;
+  onClear(role: MotionRole): void;
+}
+
 const ROLES: MotionRole[] = ["in", "out", "morph"];
 
 /**
- * Movimiento de la slide, al pie del panel de slides: es una propiedad del
- * borde entre dos slides, así que vive junto a la lista que define ese orden y
- * no en el inspector del elemento seleccionado.
- *
- * Los campos siempre muestran el valor resuelto —documento ← slide— para que
- * nunca se vea un control vacío; tocar uno declara sólo esa propiedad en esta
- * slide y el resto sigue heredando.
+ * Formulario común para los dos niveles que aceptan parches. Recibe el valor
+ * ya resuelto, pero cada interacción emite únicamente la propiedad tocada: así
+ * una excepción no congela los defaults que todavía hereda.
  */
-export function SlideMotion({ t, document: deck, slideId, disabled = false, onSet, onClear }: SlideMotionProps) {
+function MotionEditor({
+  t,
+  motionBeatMs,
+  motion,
+  declared,
+  title,
+  inheritedLabel,
+  declaredLabel,
+  regionLabel,
+  disabled,
+  onSet,
+  onClear,
+}: MotionEditorProps) {
   const [role, setRole] = useState<MotionRole>("in");
-  const motion = resolveSlideMotion(deck, slideId);
-  const declared = deck.slides.find(({ id }) => id === slideId)?.motion?.[role] !== undefined;
+  const rolesId = useId();
+  const roleDeclared = declared(role);
   const current = motion[role];
   const animation = current.animation;
 
@@ -69,12 +102,30 @@ export function SlideMotion({ t, document: deck, slideId, disabled = false, onSe
     onSet(role, { animation: next });
   };
 
+  const selectRoleFromKeyboard = (event: KeyboardEvent<HTMLButtonElement>, currentRole: MotionRole) => {
+    const currentIndex = ROLES.indexOf(currentRole);
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? ROLES.length - 1
+        : event.key === "ArrowRight"
+          ? (currentIndex + 1) % ROLES.length
+          : event.key === "ArrowLeft"
+            ? (currentIndex + ROLES.length - 1) % ROLES.length
+            : undefined;
+    if (nextIndex === undefined) return;
+    event.preventDefault();
+    const next = ROLES[nextIndex]!;
+    setRole(next);
+    document.getElementById(`${rolesId}-${next}-tab`)?.focus();
+  };
+
   return (
-    <section className="motion">
+    <section className="motion" aria-label={regionLabel}>
       <header className="motion__head">
-        <h3>{t("motion.title")}</h3>
-        <span className={`badge ${declared ? "badge--on" : "badge--quiet"}`}>
-          {declared ? t("motion.declared") : t("motion.inherited")}
+        <h3>{title}</h3>
+        <span className={`badge ${roleDeclared ? "badge--on" : "badge--quiet"}`}>
+          {roleDeclared ? declaredLabel : inheritedLabel}
         </span>
       </header>
 
@@ -82,12 +133,14 @@ export function SlideMotion({ t, document: deck, slideId, disabled = false, onSe
         {ROLES.map((value) => (
           <button
             key={value}
+            id={`${rolesId}-${value}-tab`}
             type="button"
             role="tab"
             aria-selected={role === value}
             tabIndex={role === value ? 0 : -1}
             className={role === value ? "is-active" : ""}
             onClick={() => setRole(value)}
+            onKeyDown={(event) => selectRoleFromKeyboard(event, value)}
           >
             {label[value]}
           </button>
@@ -171,7 +224,8 @@ export function SlideMotion({ t, document: deck, slideId, disabled = false, onSe
         <NumberField
           label={t("motion.scaleFrom")}
           value={animation.from}
-          min={0}
+          min={0.01}
+          max={10}
           step={0.05}
           disabled={disabled}
           onCommit={(from) => onSet(role, { animation: { kind: "scale", from } })}
@@ -183,6 +237,7 @@ export function SlideMotion({ t, document: deck, slideId, disabled = false, onSe
           label={t("motion.duration")}
           value={current.durationBeats}
           min={0}
+          max={8}
           step={0.25}
           disabled={disabled}
           onCommit={(durationBeats) => onSet(role, { durationBeats })}
@@ -191,6 +246,7 @@ export function SlideMotion({ t, document: deck, slideId, disabled = false, onSe
           label={t("motion.delayBeats")}
           value={current.delayBeats}
           min={0}
+          max={16}
           step={0.25}
           disabled={disabled}
           onCommit={(delayBeats) => onSet(role, { delayBeats })}
@@ -199,9 +255,10 @@ export function SlideMotion({ t, document: deck, slideId, disabled = false, onSe
           label={t("motion.delay")}
           value={current.delayMs}
           min={0}
+          max={60_000}
           step={50}
           disabled={disabled}
-          onCommit={(delayMs) => onSet(role, { delayMs })}
+          onCommit={(delayMs) => onSet(role, { delayMs: Math.round(delayMs) })}
         />
       </div>
       <p className="motion__hint">{t("motion.delayHint")}</p>
@@ -220,20 +277,74 @@ export function SlideMotion({ t, document: deck, slideId, disabled = false, onSe
       />
 
       <p className="motion__hint">
-        {t("motion.effective", { ms: effectiveDurationMs(deck.motionBeatMs, current.durationBeats) })}
+        {t("motion.effective", { ms: effectiveDurationMs(motionBeatMs, current.durationBeats) })}
         {current.delayBeats > 0 || current.delayMs > 0
-          ? ` · ${t("motion.effectiveDelay", { ms: effectiveDelayMs(deck.motionBeatMs, current.delayBeats, current.delayMs) })}`
+          ? ` · ${t("motion.effectiveDelay", { ms: effectiveDelayMs(motionBeatMs, current.delayBeats, current.delayMs) })}`
           : ""}
       </p>
 
       <button
         type="button"
         className="panel__inline-action"
-        disabled={disabled || !declared}
+        disabled={disabled || !roleDeclared}
         onClick={() => onClear(role)}
       >
         <RotateCcw aria-hidden="true" /> {t("motion.reset")}
       </button>
     </section>
+  );
+}
+
+/**
+ * Movimiento de la slide, al pie del panel que define su orden. Los campos
+ * muestran documento ← slide y conservan la interfaz histórica de esta zona.
+ */
+export function SlideMotion({ t, document: deck, slideId, disabled = false, onSet, onClear }: SlideMotionProps) {
+  const slide = deck.slides.find(({ id }) => id === slideId);
+  return (
+    <MotionEditor
+      t={t}
+      motionBeatMs={deck.motionBeatMs}
+      motion={resolveSlideMotion(deck, slideId)}
+      declared={(role) => slide?.motion?.[role] !== undefined}
+      title={t("motion.title")}
+      inheritedLabel={t("motion.inherited")}
+      declaredLabel={t("motion.declared")}
+      disabled={disabled}
+      onSet={onSet}
+      onClear={onClear}
+    />
+  );
+}
+
+/** Movimiento específico del estado seleccionado: slide ← elemento. */
+export function ElementMotion({
+  t,
+  document: deck,
+  slideId,
+  elementId,
+  disabled = false,
+  onSet,
+  onClear,
+}: ElementMotionProps) {
+  const state = deck.slides
+    .find(({ id }) => id === slideId)
+    ?.states.find(({ elementId: id }) => id === elementId);
+  const title = t("motion.elementTitle");
+
+  return (
+    <MotionEditor
+      t={t}
+      motionBeatMs={deck.motionBeatMs}
+      motion={resolveElementMotion(deck, slideId, elementId)}
+      declared={(role) => state?.motion?.[role] !== undefined}
+      title={title}
+      regionLabel={title}
+      inheritedLabel={t("motion.inheritedElement")}
+      declaredLabel={t("motion.declaredElement")}
+      disabled={disabled}
+      onSet={onSet}
+      onClear={onClear}
+    />
   );
 }

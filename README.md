@@ -10,6 +10,7 @@ same portable `.deks` file and see confirmed revisions appear in the editor with
 - Compare `expectedRevision` before every write.
 - Replace the complete `.deks` atomically under an interoperable sibling lock and archive fingerprint CAS.
 - Keep embedded images in the archive; local idempotency/activity stays in a hidden sibling state directory.
+- Write a slide script, record/re-record its narration locally as portable WAV, listen to it, and present with timed narrated advancement.
 - Watch the canonical document and rebase the open editor after an external/MCP revision.
 - Run a local stdio MCP with `list_presentations`, `get_presentation`, read-only
   `render_slide_preview`, transactional `apply_commands` and `add_asset`.
@@ -140,9 +141,14 @@ Mutation tools require both `expected_revision` and an `idempotency_key`. The se
 presentation by its document ID; tools never receive filesystem paths. It creates a receipt with
 `origin: "agent"`, which the Tauri watcher turns into visible activity.
 
-### Assets
+Named logical groups use the portable v3 identity graph: define a `kind: "group"` identity without
+a slide state, then assign member identities through `parentId`. Members keep absolute geometry and
+style. In `apply_commands`, `update-element-identity` accepts `{"parentId": null}` as the JSON
+transport form for removing membership; the saved document omits `parentId` entirely.
 
-Images live inside the same `.deks`, content-addressed by SHA-256. Resolving one needs only the
+### Assets and narration
+
+Images and narration audio live inside the same `.deks`, content-addressed by SHA-256. Resolving one needs only the
 descriptor and packaged bytes — never an absolute path. The file can be moved or copied without
 breaking.
 
@@ -158,14 +164,22 @@ characters) and rejects scripts, events, styles, text/font surfaces, embedded im
 external or `data:` reference. The canonical sanitized UTF-8 bytes—not the submitted XML—are what
 the `.deks` stores and hashes.
 
+Narration accepts canonical MPEG-1 Layer III or PCM RIFF/WAV (16/24-bit, one or two channels,
+8–48 kHz) up to 50 MB and ten minutes. Desktop records only after an explicit microphone gesture,
+decodes the WebView's temporary container locally, and embeds mono 24 kHz/16-bit WAV; the temporary
+WebM/MP4 container, device name and paths never enter the file. A slide owns `narration.script`,
+`pauseBeforeMs`, `pauseAfterMs` and an optional audio reference with provenance.
+
 Desktop imports an image through the system file picker, which may point anywhere; the bytes always
 land inside the archive. Agents use `add_asset`, which takes base64 bytes and no path at all —
 MCP only ever sees the authorized root, so accepting a path would hand it an arbitrary file reader.
 Both paths package the bytes in the same atomic transaction that declares the descriptor, so a
 descriptor never points at content that is not there.
 
-`add_asset` registers the asset and returns its id. Placing it on a slide is a separate
-`apply_commands` batch with `define-element` and `add-element-state` referencing that `assetId`.
+`add_asset` registers the asset and returns its id. Placing an image is a separate
+`apply_commands` batch with `define-element` and `add-element-state`; attaching audio uses
+`set-slide-narration`. The inverse is `clear-slide-narration`, followed by `remove-asset` only when
+no other slide references those bytes.
 
 ### Visual QA
 
@@ -234,7 +248,7 @@ fails if those two drift apart or if the placeholder key ever reaches the base c
 ## Assets
 
 Core owns the discriminated asset contract. A script can supply memory bytes/`Blob` or an HTTPS URL;
-the serialized v2 document keeps a stable asset reference. Renderer Core receives only the resolved
+the serialized v3 document keeps a stable asset reference. Renderer Core receives only the resolved
 render URL and never performs fetch, upload or filesystem work.
 
 Desktop consumes exact published `@deks-js/document`, `@deks-js/renderer-core` and

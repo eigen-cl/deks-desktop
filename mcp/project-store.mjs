@@ -5,11 +5,13 @@ import {
   applyDeksCommand,
   assertDeksDocument,
   createDeksFile,
+  DEKS_AUDIO_LIMITS,
   DEKS_IMAGE_LIMITS,
-  inspectAndNormalizeDeksImage,
+  inspectAndNormalizeDeksAsset,
   migrateDeksDocument,
   normalizeDeksFileAssets,
   readDeksFile,
+  sniffDeksAudioMediaType,
   sniffDeksImageMediaType,
 } from "@deks-js/document";
 import {
@@ -27,10 +29,13 @@ const ASSET_EXTENSIONS = Object.freeze({
   "image/gif": "gif",
   "image/webp": "webp",
   "image/svg+xml": "svg",
+  "audio/mpeg": "mp3",
+  "audio/wav": "wav",
 });
 
 export function sniffAsset(bytes) {
-  const mediaType = sniffDeksImageMediaType(new Uint8Array(bytes));
+  const content = new Uint8Array(bytes);
+  const mediaType = sniffDeksImageMediaType(content) ?? sniffDeksAudioMediaType(content);
   return mediaType ? { mediaType, extension: ASSET_EXTENSIONS[mediaType] } : undefined;
 }
 
@@ -47,6 +52,8 @@ export const DEKS_COMMAND_TYPES = Object.freeze([
   "delete-element",
   "create-slide",
   "update-slide",
+  "set-slide-narration",
+  "clear-slide-narration",
   "reorder-slides",
   "delete-slide",
   "add-element-state",
@@ -138,8 +145,11 @@ function selectPackagedAssets(document, availableAssets) {
 }
 
 async function readLegacyAssetBounded(path, mediaType) {
-  const maxBytes = mediaType === DEKS_IMAGE_LIMITS.svgMediaType
-    ? DEKS_IMAGE_LIMITS.maxSvgBytes : DEKS_IMAGE_LIMITS.maxRasterBytes;
+  const maxBytes = mediaType.startsWith("audio/")
+    ? DEKS_AUDIO_LIMITS.maxBytes
+    : mediaType === DEKS_IMAGE_LIMITS.svgMediaType
+      ? DEKS_IMAGE_LIMITS.maxSvgBytes
+      : DEKS_IMAGE_LIMITS.maxRasterBytes;
   const handle = await open(path, constants.O_RDONLY);
   try {
     const metadata = await handle.stat();
@@ -197,7 +207,7 @@ export class ProjectStore {
       const assetPath = join(canonical, LEGACY_ASSETS_DIR, `${descriptor.id}.${extension}`);
       try {
         assertInside(canonical, assetPath);
-        const inspected = inspectAndNormalizeDeksImage(
+        const inspected = inspectAndNormalizeDeksAsset(
           await readLegacyAssetBounded(assetPath, descriptor.mediaType),
           descriptor.mediaType,
         );
@@ -348,11 +358,11 @@ export class ProjectStore {
       if (currentProject.document.revision !== expectedRevision) throw new Error("revision_conflict");
 
       let next = currentProject.document;
-      for (const command of commands) {
-        if (!command || typeof command !== "object" || !DEKS_COMMAND_TYPE_SET.has(command.type)) {
+      for (const inputCommand of commands) {
+        if (!inputCommand || typeof inputCommand !== "object" || !DEKS_COMMAND_TYPE_SET.has(inputCommand.type)) {
           throw new Error("unsupported_command");
         }
-        next = applyDeksCommand(next, command).document;
+        next = applyDeksCommand(next, inputCommand).document;
       }
       next = { ...next, revision: expectedRevision + 1 };
       assertDeksDocument(next);
@@ -387,10 +397,11 @@ export class ProjectStore {
 
   async addAsset({ presentationId, expectedRevision, idempotencyKey, base64, originalFilename }) {
     if (typeof base64 !== "string" || base64.length === 0) throw new Error("asset_required");
-    if (base64.length > Math.ceil(DEKS_IMAGE_LIMITS.maxRasterBytes / 3) * 4) throw new Error("asset_too_large");
+    const maxAssetBytes = Math.max(DEKS_IMAGE_LIMITS.maxRasterBytes, DEKS_AUDIO_LIMITS.maxBytes);
+    if (base64.length > Math.ceil(maxAssetBytes / 3) * 4) throw new Error("asset_too_large");
     if (base64.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) throw new Error("asset_not_base64");
     const bytes = Buffer.from(base64, "base64");
-    const inspected = inspectAndNormalizeDeksImage(new Uint8Array(bytes));
+    const inspected = inspectAndNormalizeDeksAsset(new Uint8Array(bytes));
     validateIdempotencyKey(idempotencyKey);
 
     const contentHash = createHash("sha256").update(inspected.bytes).digest("hex");

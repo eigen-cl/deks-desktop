@@ -11,6 +11,7 @@ import {
   detectAgents,
   forgetManagedInstall,
   importAsset,
+  importNarrationAsset,
   installAgent,
   listProjects,
   migrateLegacyProject,
@@ -450,6 +451,19 @@ export function App() {
             return imported;
           } catch (caught) {
             setErrorKey(imageErrorKey(caught, "error.asset"));
+            return undefined;
+          }
+        }}
+        onImportNarrationAsset={async (bytes) => {
+          try {
+            const imported = importNarrationAsset(bytes);
+            assetRef.current = [
+              ...assetRef.current.filter(({ id }) => id !== imported.id),
+              { id: imported.id, mediaType: imported.mediaType, bytes: imported.bytes, contentHash: "" },
+            ];
+            return imported;
+          } catch {
+            setErrorKey("error.narrationAsset");
             return undefined;
           }
         }}

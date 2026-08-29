@@ -58,6 +58,40 @@ function presentationWithThreeSlides(): DeksDocument {
   ]).document;
 }
 
+function presentationWithElementInheritingSlideMotion(): DeksDocument {
+  const source = createPresentation("Deck", { width: 1600, height: 900 }, "deck", undefined, "Inicio");
+  const slideId = source.slides[0]!.id;
+  const { element, state } = createElement(source, slideId, "text", translator("es"));
+  return applyDeksCommands(source, [
+    { type: "define-element", element },
+    { type: "add-element-state", slideId, state },
+    {
+      type: "set-motion",
+      scope: { kind: "slide", slideId },
+      role: "in",
+      patch: { durationBeats: 2, easing: "linear" },
+    },
+  ]).document;
+}
+
+function presentationWithLogicalGroups(): DeksDocument {
+  const source = createPresentation("Deck", { width: 1600, height: 900 }, "deck", undefined, "Inicio");
+  const slideId = source.slides[0]!.id;
+  const title = createElement(source, slideId, "text", translator("es"));
+  const card = createElement(source, slideId, "rectangle", translator("es"));
+  const free = createElement(source, slideId, "ellipse", translator("es"));
+  return applyDeksCommands(source, [
+    { type: "define-element", element: { id: "section", kind: "group", name: "Sección", isLocked: false } },
+    { type: "define-element", element: { id: "card", kind: "group", name: "Tarjeta", parentId: "section", isLocked: false } },
+    { type: "define-element", element: { ...title.element, id: "title", parentId: "card" } },
+    { type: "add-element-state", slideId, state: { ...title.state, elementId: "title" } },
+    { type: "define-element", element: { ...card.element, id: "card-fill", parentId: "card" } },
+    { type: "add-element-state", slideId, state: { ...card.state, elementId: "card-fill" } },
+    { type: "define-element", element: { ...free.element, id: "free" } },
+    { type: "add-element-state", slideId, state: { ...free.state, elementId: "free" } },
+  ]).document;
+}
+
 /**
  * Los desplegables son Radix, no `<select>` nativo: se abren y se elige la
  * opción por su etiqueta visible, igual que haría una persona.
@@ -91,7 +125,7 @@ describe("editor de escritorio", () => {
     await user.click(screen.getByRole("button", { name: "Editor settings" }));
     await pickOption(user, "Language", "System");
     expect(onLocaleChange).toHaveBeenCalledWith("system");
-  }, 10_000);
+  });
 
   it("localiza el contenido inicial que crea la interfaz sin traducir contratos", async () => {
     const user = userEvent.setup();
@@ -314,6 +348,18 @@ describe("editor de escritorio", () => {
     await user.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Deck" })).not.toBeInTheDocument());
   });
+
+  it("no pide el micrófono hasta que la slide tenga un guion no vacío", async () => {
+    const user = userEvent.setup();
+    const { saved } = setup();
+    const record = screen.getByRole("button", { name: "Grabar" });
+    expect(record).toBeDisabled();
+    expect(screen.getByText("Escribe el guion antes de grabar.")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Guion"), "Esta slide abre la historia.");
+    await waitFor(() => expect(saved.at(-1)!.slides[0]!.narration?.script).toBe("Esta slide abre la historia."));
+    expect(record).toBeEnabled();
+  });
 });
 
 describe("assets e historial", () => {
@@ -479,6 +525,78 @@ describe("lienzo", () => {
 });
 
 describe("inventario de elementos", () => {
+  it("muestra carpetas lógicas anidadas aunque los grupos no tengan estado", async () => {
+    const user = userEvent.setup();
+    const source = presentationWithLogicalGroups();
+    setup(source);
+
+    await user.click(screen.getByRole("tab", { name: "Elementos" }));
+
+    const section = screen.getByRole("group", { name: "Grupo Sección" });
+    const card = within(section).getByRole("group", { name: "Grupo Tarjeta" });
+    expect(within(card).getByText("Texto")).toBeInTheDocument();
+    expect(within(card).getByText("Rectángulo")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Seleccionar «Elipse»" })).toBeInTheDocument();
+    expect(source.slides[0]!.states.some(({ elementId }) => ["section", "card"].includes(elementId))).toBe(false);
+  });
+
+  it("no convierte un state histórico de grupo en una caja seleccionable", async () => {
+    const source = presentationWithLogicalGroups();
+    source.slides[0]!.states.push({
+      elementId: "section",
+      x: 0,
+      y: 0,
+      width: 1600,
+      height: 900,
+      rotationDeg: 0,
+      opacity: 1,
+      zIndex: -1,
+    });
+    assertDeksDocument(source);
+    setup(source);
+
+    expect(screen.getAllByRole("button").filter((button) =>
+      button.classList.contains("canvas__target") && button.getAttribute("aria-label") === "Sección"))
+      .toHaveLength(0);
+  });
+
+  it("crea un grupo nombrado para la selección como una sola revisión sin moverla", async () => {
+    const user = userEvent.setup();
+    const { saved } = setup();
+    await user.click(screen.getByRole("button", { name: "Rectángulo" }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+    const before = structuredClone(saved.at(-1)!.slides[0]!.states[0]!);
+
+    await user.click(screen.getByRole("tab", { name: "Elementos" }));
+    await user.type(screen.getByLabelText("Nombre del grupo"), "Hero");
+    await user.click(screen.getByRole("button", { name: "Crear grupo con la selección" }));
+
+    await waitFor(() => expect(saved).toHaveLength(2));
+    const document = saved.at(-1)!;
+    const group = document.elements.find(({ kind }) => kind === "group")!;
+    const member = document.elements.find(({ kind }) => kind === "shape")!;
+    expect(group).toMatchObject({ kind: "group", name: "Hero" });
+    expect(member.parentId).toBe(group.id);
+    expect(document.slides[0]!.states.some(({ elementId }) => elementId === group.id)).toBe(false);
+    expect(document.slides[0]!.states[0]).toEqual(before);
+  });
+
+  it("asigna y desagrupa desde el inspector sin conservar parentId ni tocar geometría", async () => {
+    const user = userEvent.setup();
+    const { saved } = setup(presentationWithLogicalGroups());
+    await user.click(screen.getAllByRole("button", { name: "Elipse" })
+      .find((button) => button.classList.contains("canvas__target"))!);
+    const before = structuredClone(presentationWithLogicalGroups().slides[0]!.states.find(({ elementId }) => elementId === "free")!);
+
+    await pickOption(user, "Grupo lógico", "Sección / Tarjeta");
+    await waitFor(() => expect(saved.at(-1)!.elements.find(({ id }) => id === "free")!.parentId).toBe("card"));
+    expect(saved.at(-1)!.slides[0]!.states.find(({ elementId }) => elementId === "free")).toEqual(before);
+
+    await pickOption(user, "Grupo lógico", "Sin grupo");
+    await waitFor(() => expect(saved.at(-1)!.elements.find(({ id }) => id === "free")).not.toHaveProperty("parentId"));
+    expect(saved.at(-1)!.slides[0]!.states.find(({ elementId }) => elementId === "free")).toEqual(before);
+  });
+
   it("reaparece en otra slide un elemento que ya existe, sin crear otra identidad", async () => {
     const user = userEvent.setup();
     const { saved } = setup();
@@ -534,6 +652,162 @@ describe("movimiento de la slide", () => {
 
     await user.click(screen.getByRole("button", { name: "Volver a heredar" }));
     await waitFor(() => expect(saved.at(-1)!.slides[0]!.motion?.in).toBeUndefined());
+  });
+});
+
+describe("movimiento del elemento seleccionado", () => {
+  async function openElementMotion(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getAllByRole("button", { name: "Texto" })
+      .find((button) => button.classList.contains("canvas__target"))!);
+    return screen.getByRole("region", { name: "Movimiento del elemento" });
+  }
+
+  it("muestra el valor efectivo que hereda de la diapositiva", async () => {
+    const user = userEvent.setup();
+    const source = presentationWithElementInheritingSlideMotion();
+    setup(source);
+
+    const motion = await openElementMotion(user);
+
+    expect(within(motion).getByText("Heredado de la diapositiva")).toBeInTheDocument();
+    expect(within(motion).getByLabelText("Duración (pulsos)")).toHaveValue("2");
+    expect(within(motion).getByLabelText("Curva")).toHaveTextContent("Lineal");
+    expect(source.slides[0]!.states[0]!.motion).toBeUndefined();
+  });
+
+  it("recorre los roles con flechas, Home y End manteniendo selección y foco juntos", async () => {
+    const user = userEvent.setup();
+    setup(presentationWithElementInheritingSlideMotion());
+    const motion = await openElementMotion(user);
+    const roles = within(motion).getByRole("tablist", { name: "Movimiento" });
+    const incoming = within(roles).getByRole("tab", { name: "Entrada" });
+    const outgoing = within(roles).getByRole("tab", { name: "Salida" });
+    const morph = within(roles).getByRole("tab", { name: "Continuo" });
+
+    await user.click(incoming);
+    await user.keyboard("{ArrowRight}");
+    expect(outgoing).toHaveAttribute("aria-selected", "true");
+    expect(outgoing).toHaveFocus();
+
+    await user.keyboard("{End}");
+    expect(morph).toHaveAttribute("aria-selected", "true");
+    expect(morph).toHaveFocus();
+
+    await user.keyboard("{ArrowLeft}");
+    expect(outgoing).toHaveAttribute("aria-selected", "true");
+    expect(outgoing).toHaveFocus();
+
+    await user.keyboard("{Home}");
+    expect(incoming).toHaveAttribute("aria-selected", "true");
+    expect(incoming).toHaveFocus();
+  });
+
+  it("declara en el elemento sólo el campo que se toca", async () => {
+    const user = userEvent.setup();
+    const { saved } = setup(presentationWithElementInheritingSlideMotion());
+    const motion = await openElementMotion(user);
+    const delay = within(motion).getByLabelText("Espera (pulsos)");
+
+    await user.clear(delay);
+    await user.type(delay, "1.5{Enter}");
+
+    await waitFor(() => {
+      const last = saved.at(-1)!;
+      expect(last.slides[0]!.states[0]!.motion).toEqual({ in: { delayBeats: 1.5 } });
+      expect(last.slides[0]!.motion?.in).toEqual({ durationBeats: 2, easing: "linear" });
+      expect(last.elements[0]).not.toHaveProperty("motion");
+    });
+    expect(within(motion).getByText("Declarado en este elemento")).toBeInTheDocument();
+  });
+
+  it("declara una animación discriminada completa y permite editar sus campos", async () => {
+    const user = userEvent.setup();
+    const { saved } = setup(presentationWithElementInheritingSlideMotion());
+    const motion = await openElementMotion(user);
+
+    await user.click(within(motion).getByLabelText("Animación"));
+    await user.click(await screen.findByRole("option", { name: "Cortina" }));
+    await waitFor(() => {
+      expect(saved.at(-1)!.slides[0]!.states[0]!.motion?.in?.animation)
+        .toEqual({ kind: "crop", edge: "bottom" });
+    });
+
+    await user.click(within(motion).getByLabelText("Desde"));
+    await user.click(await screen.findByRole("option", { name: "Arriba" }));
+    await waitFor(() => {
+      const animation = saved.at(-1)!.slides[0]!.states[0]!.motion?.in?.animation;
+      expect(animation).toEqual({ kind: "crop", edge: "top" });
+      expect(animation).not.toHaveProperty("distance");
+    });
+  });
+
+  it("limita la escala inicial al mínimo canónico", async () => {
+    const user = userEvent.setup();
+    const { saved } = setup(presentationWithElementInheritingSlideMotion());
+    const motion = await openElementMotion(user);
+
+    await user.click(within(motion).getByLabelText("Animación"));
+    await user.click(await screen.findByRole("option", { name: "Escalar" }));
+    await waitFor(() => {
+      expect(saved.at(-1)!.slides[0]!.states[0]!.motion?.in?.animation)
+        .toEqual({ kind: "scale", from: 0.8 });
+    });
+
+    const scale = within(motion).getByLabelText("Escala inicial");
+    await user.clear(scale);
+    await user.type(scale, "0{Enter}");
+
+    await waitFor(() => {
+      expect(saved.at(-1)!.slides[0]!.states[0]!.motion?.in?.animation)
+        .toEqual({ kind: "scale", from: 0.01 });
+    });
+  });
+
+  it.each([
+    ["Duración (pulsos)", 8, (document: DeksDocument) => document.slides[0]!.states[0]!.motion?.in?.durationBeats],
+    ["Espera (pulsos)", 16, (document: DeksDocument) => document.slides[0]!.states[0]!.motion?.in?.delayBeats],
+    ["Retraso (ms)", 60_000, (document: DeksDocument) => document.slides[0]!.states[0]!.motion?.in?.delayMs],
+  ] as const)("limita %s al máximo canónico %i", async (label, maximum, readValue) => {
+    const user = userEvent.setup();
+    const { saved } = setup(presentationWithElementInheritingSlideMotion());
+    const motion = await openElementMotion(user);
+    const field = within(motion).getByLabelText(label);
+
+    await user.clear(field);
+    await user.type(field, "99999{Enter}");
+
+    await waitFor(() => expect(saved).not.toHaveLength(0));
+    expect(readValue(saved.at(-1)!)).toBe(maximum);
+  });
+
+  it("limpia la declaración del rol y vuelve a heredar", async () => {
+    const user = userEvent.setup();
+    const { saved } = setup(presentationWithElementInheritingSlideMotion());
+    const motion = await openElementMotion(user);
+    const duration = within(motion).getByLabelText("Duración (pulsos)");
+
+    await user.clear(duration);
+    await user.type(duration, "3{Enter}");
+    await waitFor(() => expect(saved.at(-1)!.slides[0]!.states[0]!.motion?.in?.durationBeats).toBe(3));
+
+    await user.click(within(motion).getByRole("button", { name: "Volver a heredar" }));
+
+    await waitFor(() => {
+      expect(saved.at(-1)!.slides[0]!.states[0]!.motion?.in).toBeUndefined();
+      expect(within(motion).getByText("Heredado de la diapositiva")).toBeInTheDocument();
+      expect(within(motion).getByLabelText("Duración (pulsos)")).toHaveValue("2");
+    });
+  });
+
+  it("no muestra ni ejecuta controles de movimiento sin una selección", async () => {
+    const user = userEvent.setup();
+    const { saved } = setup(presentationWithElementInheritingSlideMotion());
+
+    await user.click(screen.getByRole("tab", { name: "Elemento" }));
+
+    expect(screen.getByText("Selecciona un elemento para editarlo.")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Movimiento del elemento" })).not.toBeInTheDocument();
+    expect(saved).toHaveLength(0);
   });
 });
 

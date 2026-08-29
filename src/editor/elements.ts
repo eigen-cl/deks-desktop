@@ -1,4 +1,5 @@
 import type {
+  DeksCommand,
   DeksDocument,
   DeksElement,
   DeksElementState,
@@ -36,7 +37,9 @@ export function editorElements(document: DeksDocument, slideId: string): EditorE
   return slideOf(document, slideId).states
     .flatMap((state) => {
       const identity = identities.get(state.elementId);
-      if (!identity) return [];
+      // `group` es una carpeta de identidad. Incluso si un documento histórico
+      // trae un state para ella, no se convierte en target ni caja editable.
+      if (!identity || identity.kind === "group") return [];
       const { elementId: _ignored, ...rest } = state;
       return [{ ...identity, ...rest } satisfies EditorElement];
     })
@@ -274,8 +277,12 @@ export function duplicateElement(
   if (!state) throw new Error(`Unknown DEKS element state: ${source.id}`);
   const elementId = id("element");
   const offset = Math.round(Math.min(document.canvas.width, document.canvas.height) * 0.02);
+  const identity = document.elements.find(({ id: identityId }) => identityId === source.id);
+  if (!identity) throw new Error(`Unknown DEKS element identity: ${source.id}`);
   return {
-    element: { ...identityOf(source), id: elementId },
+    // La identidad canónica ya separa todos los campos del state. Copiarla
+    // conserva parentId/semanticRole y futuros atributos sin duplicar listas.
+    element: { ...structuredClone(identity), id: elementId },
     state: {
       ...structuredClone(state),
       elementId,
@@ -324,29 +331,30 @@ export function duplicateSlide(slide: DeksSlide, name: string): DeksSlide {
   return { ...structuredClone(slide), id: id("slide"), name };
 }
 
-/** Devuelve sólo la identidad de un elemento del editor, sin su checkpoint. */
-function identityOf(element: EditorElement): DeksElement {
-  const { name, isLocked } = element;
-  if (element.kind === "shape") {
-    return { id: element.id, kind: "shape", shapeKind: element.shapeKind, name, isLocked };
-  }
-  if (element.kind === "number") {
-    return { id: element.id, kind: "number", animateMagnitude: element.animateMagnitude, name, isLocked };
-  }
-  if (element.kind === "text") {
-    return {
-      id: element.id,
-      kind: "text",
-      name,
-      content: element.content,
-      fontFamily: element.fontFamily,
-      horizontalAlignment: element.horizontalAlignment,
-      verticalAlignment: element.verticalAlignment,
-      overflowMode: element.overflowMode,
-      isLocked,
-    };
-  }
-  return { id: element.id, kind: element.kind, name, isLocked } as DeksElement;
+export function createLogicalGroup(
+  elementIds: readonly string[],
+  name: string,
+): { group: DeksElement; commands: DeksCommand[] } {
+  const normalizedName = name.trim();
+  if (normalizedName.length === 0) throw new Error("group name is required");
+  if (elementIds.length === 0) throw new Error("at least one element is required");
+  const group: DeksElement = {
+    id: id("group"),
+    kind: "group",
+    name: normalizedName,
+    isLocked: false,
+  };
+  return {
+    group,
+    commands: [
+      { type: "define-element", element: group },
+      ...elementIds.map((elementId) => ({
+        type: "update-element-identity" as const,
+        elementId,
+        patch: { parentId: group.id },
+      })),
+    ],
+  };
 }
 
 export function clampOpacity(value: number) {

@@ -8,6 +8,11 @@ Treat the tools discovered from the server as the current source of truth. Revie
 their schemas plus `readOnlyHint`, `openWorldHint`, and `destructiveHint`
 annotations before every release; do not rely on a hard-coded tool count.
 
+This deployed surface remains codec v2 during the staged portable-v3 rollout.
+There is no slide-narration command and `upload_asset` remains image-only. Never
+invent `set_slide_narration`, `clear_slide_narration`, audio upload or a v3
+document write. Desktop's kebab-case Core commands are not Cloud operations.
+
 ## Read tools
 
 - `list_presentations()` — list workspace decks and canonical revisions.

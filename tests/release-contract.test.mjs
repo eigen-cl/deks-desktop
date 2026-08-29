@@ -42,10 +42,21 @@ test("the package contract enables native bundles and embeds only the five revie
     "design-deks-presentations",
   ]);
   assert.equal(report.source.repository, "https://github.com/eigen-cl/deks-desktop");
-  assert.equal(report.source.version, "0.11.0");
+  assert.equal(report.source.version, "0.12.0");
   for (const relativePath of report.files) {
     assert.equal((await lstat(join(new URL("bundled-skills/", root).pathname, relativePath))).isSymbolicLink(), false);
   }
+});
+
+test("the signed macOS app declares microphone purpose and audio-input entitlement for explicit narration recording", async () => {
+  const config = JSON.parse(await readFile(new URL("src-tauri/tauri.conf.json", root), "utf8"));
+  const info = await readFile(new URL("src-tauri/Info.plist", root), "utf8");
+  const entitlements = await readFile(new URL("src-tauri/Entitlements.plist", root), "utf8");
+  assert.equal(config.bundle.macOS.infoPlist, "Info.plist");
+  assert.equal(config.bundle.macOS.entitlements, "Entitlements.plist");
+  assert.match(config.app.security.csp, /media-src 'self' blob:/);
+  assert.match(info, /NSMicrophoneUsageDescription/);
+  assert.match(entitlements, /com\.apple\.security\.device\.audio-input/);
 });
 
 test("the installed MCP payload is self-contained apart from documented Node and Chromium prerequisites", async () => {
@@ -56,34 +67,34 @@ test("the installed MCP payload is self-contained apart from documented Node and
   assert.deepEqual(
     Object.fromEntries(Object.entries(desktopPackageJson.dependencies).filter(([name]) => name.startsWith("@deks-js/"))),
     {
-      "@deks-js/document": "5.0.0",
-      "@deks-js/render-preview": "5.0.0",
-      "@deks-js/renderer-core": "5.0.0",
+      "@deks-js/document": "6.0.0",
+      "@deks-js/render-preview": "6.0.0",
+      "@deks-js/renderer-core": "6.0.0",
     },
   );
-  assert.equal(packageJson.version, "0.3.0");
+  assert.equal(packageJson.version, "0.4.0");
   assert.equal(packageLock.version, packageJson.version);
   assert.equal(packageLock.packages[""]?.version, packageJson.version);
   assert.deepEqual(packageJson.engines, { node: ">=22" });
   assert.equal(packageJson.scripts.start, "node mcp/server.mjs");
   assert.equal(packageJson.scripts["install-browser"], "playwright install chromium");
   assert.deepEqual(packageJson.dependencies, {
-    "@deks-js/document": "5.0.0",
-    "@deks-js/render-preview": "5.0.0",
+    "@deks-js/document": "6.0.0",
+    "@deks-js/render-preview": "6.0.0",
     "playwright": "1.62.1",
   });
   for (const lock of [desktopPackageLock, packageLock]) {
     assert.doesNotMatch(JSON.stringify(lock), /file:|\.\.\/deks-core|artifacts\//);
-    assert.equal(lock.packages["node_modules/@deks-js/document"]?.version, "5.0.0");
-    assert.equal(lock.packages["node_modules/@deks-js/render-preview"]?.version, "5.0.0");
-    assert.equal(lock.packages["node_modules/@deks-js/renderer-core"]?.version, "5.0.0");
+    assert.equal(lock.packages["node_modules/@deks-js/document"]?.version, "6.0.0");
+    assert.equal(lock.packages["node_modules/@deks-js/render-preview"]?.version, "6.0.0");
+    assert.equal(lock.packages["node_modules/@deks-js/renderer-core"]?.version, "6.0.0");
   }
   const readme = await readFile(new URL("bundled-mcp/README.md", root), "utf8");
   const server = await readFile(new URL("mcp/server.mjs", root), "utf8");
   assert.match(readme, /Node\.js 22/);
   assert.match(readme, /npm ci --omit=dev/);
   assert.match(readme, /npm run install-browser/);
-  assert.match(server, /serverInfo: \{ name: "deks-local", version: "0\.3\.0" \}/);
+  assert.match(server, /serverInfo: \{ name: "deks-local", version: "0\.4\.0" \}/);
 });
 
 test("release workflow builds all desktop platforms, notarizes macOS and publishes checksums", async () => {

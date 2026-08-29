@@ -6,10 +6,10 @@ rules turns a class of failed writes into edits you never send.
 
 ## Structural invariants
 
-- `format` is exactly `"deks"` and canonical documents require
-  `codecVersion: 2`; every root key must be present and no unknown key is allowed.
-  An absent version or `codecVersion: 1` is decoded as v1 and migrated first;
-  future versions are rejected. The v1 → v2 migration uses the first state in
+- `format` is exactly `"deks"` and canonical portable documents require
+  `codecVersion: 3`; every root key must be present and no unknown key is allowed.
+  An absent version or `codecVersion: 1` migrates v1 → v2 → v3; explicit v2
+  migrates v2 → v3; future versions are rejected. The v1 → v2 step uses the first state in
   slide order for fixed text identity fields and may return non-blocking conflict
   warnings.
 - `revision` is a non-negative integer maintained by the host.
@@ -24,7 +24,7 @@ rules turns a class of failed writes into edits you never send.
   `states`.
 - Every `states[].elementId` must reference a declared element.
 - Every image state's `assetId` must reference a declared asset. An asset still referenced by
-  any state cannot be removed.
+  any state or slide narration cannot be removed.
 - An admitted image must be PNG, JPEG, GIF or WebP up to 50 MB, or canonical
   static SVG up to 5 MB. Its real bytes, dimensions and content hash must match
   the descriptor; neither a filename nor a declared media type is evidence.
@@ -36,7 +36,18 @@ rules turns a class of failed writes into edits you never send.
   references. Only `<title>` and `<desc>` may contain inert text. SVG complexity
   is bounded to 10,000 nodes, depth 64, 100,000 attributes and 2,000,000
   path-data characters.
-- `parentId` must reference a declared `group`, and the parent chain must not contain a cycle.
+- Slide `narration`, when present, has exactly non-empty plain `script`, integer
+  `pauseBeforeMs`, integer `pauseAfterMs`, and optional `audio`. Audio contains
+  exactly `assetId` plus provenance `human-recorded | synthetic`, and references
+  a declared embedded `audio/wav` or `audio/mpeg` asset.
+- Narration audio is at most 50 MB and 10 minutes, has 1–2 channels and a sample
+  rate of 8–48 kHz. WAV is canonical integer PCM at 16 or 24 bit; MP3 is
+  frame-only MPEG-1 Layer III without metadata or trailing bytes.
+- `parentId` must reference a declared named `group`, and the parent chain must not contain a cycle.
+- Group identities are logical folders: they need no state and never transform descendants;
+  every member keeps its own absolute canvas geometry, style, z-order and motion.
+  Collision scans skip group identities and skip a rendered pair only when both
+  resolve to the same non-null outermost group; every other pair remains a candidate.
 - An element with children cannot be deleted.
 - A presentation always has at least one slide; the last remaining slide cannot be deleted.
 - Reordering slides requires the complete list, every existing slide exactly once.
@@ -80,6 +91,7 @@ Portable document bounds, enforced by every host:
 | `durationBeats` | 0 – 8 |
 | `delayBeats` | 0 – 16 |
 | `delayMs` | integer 0 – 60 000 |
+| `narration.pauseBeforeMs`, `.pauseAfterMs` | integer 0 – 60 000 |
 | `slide` `distance` | ≥ 0.1 |
 | `scale` `from` | 0.01 – 10 |
 | bezier `easing` | x in 0 – 1, y within ±100 |
@@ -95,7 +107,8 @@ Portable document bounds, enforced by every host:
 | `url` | up to 2048 code points |
 
 Portable capacity bounds: at most 200 slides, 500 states per slide, 100 000 elements, 10 000
-assets, 100 000 characters of `content`, and 5 MB of document JSON.
+assets, 100 000 characters of `content`, and 5 MB of document JSON. Each
+narration script is at most 100,000 characters.
 
 A portable `.deks` embeds all declared assets and is limited to 95 MB as a
 physical archive and 90 MB total after decompression. Import rejects missing,

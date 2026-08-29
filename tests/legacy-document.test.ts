@@ -73,7 +73,7 @@ describe("proyectos anteriores al contrato canónico", () => {
     const result = toCanonicalDocumentResult({ ...legacy, slides: [first, second] });
 
     expect(result.fromVersion).toBe(1);
-    expect(result.document.codecVersion).toBe(2);
+    expect(result.document.codecVersion).toBe(3);
     expect(result.document.elements[0]).toMatchObject({
       content: "Hola",
       horizontalAlignment: "left",
@@ -97,6 +97,28 @@ describe("proyectos anteriores al contrato canónico", () => {
     expect(canonicalId("presentation-1:slide:uno")).toBe("presentation-1.slide.uno");
     expect(document.slides[0]?.id).not.toMatch(/:/);
     expect(document.slides[0]?.states[0]?.elementId).toBe(document.elements[0]?.id);
+  });
+
+  it("reescribe parentId junto con la identidad al migrar grupos antiguos", () => {
+    const grouped: any = structuredClone(legacy);
+    grouped.slides[0]!.elements = [
+      {
+        id: "presentation-1:group:hero", kind: "group", name: "Hero", isLocked: false,
+        x: 0, y: 0, width: 1, height: 1, rotationDeg: 0, opacity: 1, zIndex: 0,
+      },
+      {
+        id: "presentation-1:element:card", kind: "shape", shapeKind: "rectangle",
+        name: "Card", parentId: "presentation-1:group:hero", isLocked: false,
+        x: 100, y: 120, width: 800, height: 200, rotationDeg: 0, opacity: 1, zIndex: 1,
+        shapeFill: { kind: "solid", color: "#ff7043" }, stroke: "#ff7043", strokeWidth: 0,
+      },
+    ];
+
+    const document = toCanonicalDocument(grouped);
+
+    expect(document.elements.find(({ id }) => id.endsWith("element.card"))?.parentId)
+      .toBe("presentation-1.group.hero");
+    expect(() => assertDeksDocument(document)).not.toThrow();
   });
 
   it("no vuelve a migrar un documento que ya es canónico", () => {

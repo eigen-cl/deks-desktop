@@ -10,6 +10,14 @@ Endpoint: `https://api-deks.eigen.cl/mcp/`.
 The document contract — what the fields mean and what values they take — lives in
 `$deks-presentations`. This skill is only about reaching it through this server.
 
+The deployed Cloud MCP is intentionally still on codec v2 during the staged v3
+rollout. It does not admit narration audio and exposes no command for
+`slide.narration`. Do not send `set-slide-narration`,
+`clear-slide-narration`, WAV/MP3 assets or guessed snake_case equivalents here.
+Portable v3 narration authoring currently belongs to Desktop and `/editor`
+backendless; wait for API propagation and discovered Cloud tools before using it
+in a workspace deck.
+
 - Read [references/tools.md](references/tools.md) for the exact tool map, inputs, outputs, and unsupported operations.
 - Read `$deks-presentations` → `references/recovery.md` before retrying anything uncertain.
 
@@ -48,7 +56,7 @@ semantic `idempotency_key`; do not move `expected_revision` or the key inside th
 commands. Re-read on a conflict, an uncertain response, or whenever authoritative
 state may have changed — batching never relaxes revision or recovery rules.
 
-Validate and render the coherent result: complete one checkpoint or narration,
+Validate and render the coherent visual result: complete one checkpoint or narrative section,
 validate it, then render its affected checkpoints once. Do not validate or render
 after each property mutation. Re-render checkpoints changed by a correction batch,
 and run whole-deck validation plus ordered rendered review at the end.

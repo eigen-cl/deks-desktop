@@ -40,7 +40,7 @@ async function handleLine(line) {
       response(request.id, {
         protocolVersion: request.params?.protocolVersion ?? "2025-06-18",
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "deks-local", version: "0.3.0" },
+        serverInfo: { name: "deks-local", version: "0.4.0" },
       });
     } else if (request.method === "tools/list") {
       response(request.id, { tools: MCP_TOOLS });

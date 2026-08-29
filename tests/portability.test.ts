@@ -8,8 +8,9 @@ import {
   reanchorElementState,
   type DeksCommand,
 } from "@deks-js/document";
-import { createElement, createSlide, duplicateSlide } from "../src/editor/elements";
+import { createElement, createSlide, duplicateElement, duplicateSlide, editorElements } from "../src/editor/elements";
 import { createPresentation } from "../src/model";
+import { encodeNarrationWav } from "../src/editor/narration-audio";
 
 /**
  * La promesa del editor de escritorio no es verse igual que la web: es escribir
@@ -39,7 +40,7 @@ describe("portabilidad del documento editado en escritorio", () => {
     // proyección que usa en pantalla.
     expect(document.elements[0]).not.toHaveProperty("x");
     expect(document.slides[0]!.states[0]).not.toHaveProperty("kind");
-    expect(document.codecVersion).toBe(2);
+    expect(document.codecVersion).toBe(3);
     expect(document.elements[0]).toMatchObject({
       kind: "text",
       content: expect.any(String),
@@ -145,6 +146,32 @@ describe("portabilidad del documento editado en escritorio", () => {
     expect(reopened.assets[0]!.bytes).toEqual(pixels);
   });
 
+  it("conserva guion, pausas, procedencia y WAV al viajar por el archivo .deks", async () => {
+    const wav = encodeNarrationWav([new Float32Array(2_400)], 24_000);
+    let document = seed();
+    const slideId = document.slides[0]!.id;
+    document = applyDeksCommands(document, [
+      { type: "define-asset", asset: { id: "voice-1", kind: "embedded", mediaType: "audio/wav" } },
+      {
+        type: "set-slide-narration",
+        slideId,
+        narration: {
+          script: "Este audio permanece con la diapositiva.",
+          pauseBeforeMs: 250,
+          pauseAfterMs: 500,
+          audio: { assetId: "voice-1", provenance: "human-recorded" },
+        },
+      },
+    ]).document;
+
+    const archive = await createDeksFile(document, [{ id: "voice-1", mediaType: "audio/wav", bytes: wav }]);
+    const reopened = await readDeksFile(archive.bytes);
+
+    expect(reopened.document.slides[0]!.narration).toEqual(document.slides[0]!.narration);
+    expect(reopened.assets[0]!.mediaType).toBe("audio/wav");
+    expect(reopened.assets[0]!.bytes).toEqual(wav);
+  });
+
   it("duplicar una slide conserva sus estados y estrena identidad", () => {
     let document = seed();
     const slideId = document.slides[0]!.id;
@@ -163,6 +190,23 @@ describe("portabilidad del documento editado en escritorio", () => {
     // elemento viaje entre slides en vez de aparecer y desaparecer.
     expect(document.elements).toHaveLength(1);
     expect(() => assertDeksDocument(document)).not.toThrow();
+  });
+
+  it("duplicar un elemento conserva su grupo lógico sin copiar geometría a la identidad", () => {
+    let document = seed();
+    const slideId = document.slides[0]!.id;
+    const { element, state } = createElement(document, slideId, "rectangle");
+    document = applyDeksCommands(document, [
+      { type: "define-element", element: { id: "group-1", kind: "group", name: "Hero", isLocked: false } },
+      { type: "define-element", element: { ...element, parentId: "group-1" } },
+      { type: "add-element-state", slideId, state },
+    ]).document;
+
+    const copy = duplicateElement(document, slideId, editorElements(document, slideId)[0]!);
+
+    expect(copy.element.parentId).toBe("group-1");
+    expect(copy.element).not.toHaveProperty("x");
+    expect(copy.state.x).not.toBe(state.x);
   });
 
   it("cada lote de comandos avanza exactamente una revisión y reporta lo que tocó", () => {

@@ -1027,8 +1027,8 @@ h1, h2, h3 {
 .rail__item:hover .rail__grip, .rail__grip:focus-visible { opacity: 1; }
 .rail__grip svg { width: 13px; height: 13px; }
 
-/* Movimiento de la slide, al pie del panel: es propiedad del borde entre dos
-   slides, no del elemento seleccionado. */
+/* El formulario es común a slide y elemento. En el rail necesita su propio
+   límite; dentro del inspector deja el desplazamiento al contenedor padre. */
 .motion {
   display: grid;
   gap: var(--space-2);
@@ -1053,7 +1053,7 @@ h1, h2, h3 {
 
 .motion__roles button {
   flex: 1 1 0;
-  min-height: 26px;
+  min-height: 44px;
   padding: 0 var(--space-1);
   border: 0;
   border-radius: 6px;
@@ -1069,6 +1069,13 @@ h1, h2, h3 {
 .motion__hint { margin: 0; color: var(--color-text-faint); font-size: 10.5px; line-height: 1.5; }
 .motion .panel__inline-action { justify-content: center; }
 .motion .badge { font-size: 10px; }
+.inspector .motion {
+  max-height: none;
+  overflow: visible;
+  margin-top: var(--space-5);
+  padding: 0;
+  box-shadow: none;
+}
 
 /* Lienzo: el escenario conserva la proporción del documento y se centra. */
 .canvas { position: relative; min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); background: var(--color-bg); }
@@ -1251,7 +1258,7 @@ h1, h2, h3 {
 
 .element-list button {
   width: 100%;
-  min-height: 32px;
+  min-height: 44px;
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -1271,6 +1278,26 @@ h1, h2, h3 {
 .element-list__name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .element-list__lock, .element-list__add { width: 13px; height: 13px; flex: 0 0 auto; color: var(--color-text-faint); }
 .element-list__empty { margin: 0; color: var(--color-text-faint); font-size: var(--text-small); line-height: 1.5; }
+.element-list__groups, .element-list__folder ul { display: grid; gap: 1px; }
+.element-list__folder { display: grid; gap: 1px; }
+.element-list__folder ul {
+  margin-left: 10px;
+  padding-left: 9px;
+  border-left: 1px solid var(--color-border-subtle);
+}
+.element-list__folder-name, .element-list__identity-only {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+}
+.element-list__folder-name svg { width: 15px; height: 15px; color: var(--color-primary); }
+.element-list__identity-only { color: var(--color-text-faint); }
+.element-list__group-form { display: grid; gap: var(--space-2); margin-top: var(--space-2); }
+.element-list__group-form button { justify-content: center; }
 
 .editor__conflict {
   position: fixed;
@@ -1406,6 +1433,49 @@ h1, h2, h3 {
 .presenter__stage { position: relative; width: min(100vw, calc(100vh * var(--presenter-ratio, 16 / 9))); max-height: 100vh; }
 .presenter__render { position: absolute; inset: 0; }
 
+.presenter > audio { display: none; }
+
+.presenter__narration-start {
+  position: fixed;
+  z-index: 3;
+  left: 50%;
+  bottom: 84px;
+  transform: translateX(-50%);
+  min-height: 48px;
+  padding-inline: var(--space-5);
+  box-shadow: var(--shadow-float);
+}
+
+.presenter__narration-coverage {
+  position: fixed;
+  z-index: 3;
+  left: 50%;
+  bottom: 58px;
+  transform: translateX(-50%);
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+}
+
+.presenter__narration-status {
+  position: fixed;
+  z-index: 3;
+  left: 50%;
+  bottom: 82px;
+  transform: translateX(-50%);
+  max-width: min(520px, calc(100vw - 32px));
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--color-soft-edge);
+  border-radius: 999px;
+  color: var(--color-text-muted);
+  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  font-size: var(--text-small);
+  box-shadow: var(--shadow-float);
+}
+
+.presenter__narration-status.is-error { color: var(--color-primary-hover); border-color: var(--color-primary); }
+
 .presenter__controls {
   position: fixed;
   right: 0;
@@ -1431,8 +1501,8 @@ h1, h2, h3 {
 .presenter__controls span { min-width: 46px; color: var(--color-text-muted); font-size: var(--text-small); text-align: center; }
 
 .presenter__controls button {
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   display: grid;
   place-items: center;
   border: 0;
@@ -1445,6 +1515,16 @@ h1, h2, h3 {
 .presenter__controls button:hover:not(:disabled) { background: var(--color-surface-raised); }
 .presenter__controls button:disabled { opacity: 0.3; cursor: not-allowed; }
 .presenter__controls svg { width: 16px; height: 16px; }
+
+.narration-panel { border-top: 1px solid var(--color-soft-edge); padding-top: var(--space-4); }
+.narration-panel__audio { width: 100%; min-height: 44px; }
+.narration-panel__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.narration-panel__actions .button { flex: 1 1 auto; min-height: 44px; }
+.narration-panel__status,
+.narration-panel__error { margin: 0; font-size: var(--text-small); line-height: 1.45; }
+.narration-panel__status { color: var(--color-text-muted); }
+.narration-panel__status.is-recording { color: var(--color-primary); }
+.narration-panel__error { color: var(--color-primary-hover); }
 
 /* ── Ventanas angostas ────────────────────────────────────────────────── */
 

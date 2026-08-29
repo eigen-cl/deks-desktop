@@ -40,15 +40,17 @@ merges role by role, so setting `primary` alone leaves the other five in place.
 
 ## Assets
 
-Use the `add_asset` tool for image bytes: it validates PNG/JPEG/GIF/WebP up to
+Use the `add_asset` tool for admitted bytes: it validates PNG/JPEG/GIF/WebP up to
 50 MB or canonicalizes a safe static SVG up to 5 MB, then embeds the admitted
 bytes and declares the descriptor in one step. Every image is capped at 16,384
 units per side and 40 megapixels of logical width × height. Safe SVG
 has no scripts, CSS/fonts/`<text>`, `foreignObject`, nested `<image>`, `<use>`,
-SMIL content or remote/data references. `define-asset` is only for a descriptor
+SMIL content or remote/data references. It also admits narration as canonical
+WAV integer PCM or frame-only MPEG-1 Layer III, up to 50 MB and 10 minutes, with
+1–2 channels at 8–48 kHz. `define-asset` is only for a descriptor
 whose exact admitted bytes are already present; it is never an upload or
-validation bypass. `remove-asset` refuses to drop one that any state still
-references.
+validation bypass. `remove-asset` refuses to drop one that any state or slide
+narration still references.
 
 ```json
 {"type": "remove-asset", "assetId": "a1b2c3"}
@@ -57,7 +59,7 @@ references.
 ## Element identities
 
 An identity carries no geometry. Declare it once, then give it state per slide.
-In codec v2 a text identity also owns the fields that must never diverge between
+Since codec v2 (including current v3), a text identity also owns the fields that must never diverge between
 slides.
 
 ```json
@@ -79,6 +81,25 @@ slides.
 ```
 
 Shapes also accept `shapeKind: "diamond"`.
+
+Define a named logical group, then attach existing identities through
+`parentId`. Do not add relative geometry or move child states: membership is an
+identity relationship and every child keeps absolute checkpoint coordinates.
+
+```json
+{"type":"define-element","element":{"id":"hero-composite","kind":"group","name":"Hero compuesto","isLocked":false}}
+{"type":"update-element-identity","elementId":"story-title","patch":{"parentId":"hero-composite"}}
+{"type":"update-element-identity","elementId":"kpi-growth","patch":{"parentId":"hero-composite"}}
+```
+
+Elements in the same effective outermost group are excluded from collision
+diagnostics. Elements across different groups, or grouped versus ungrouped,
+remain collision candidates. Ungroup explicitly with the portable null removal
+sentinel:
+
+```json
+{"type":"update-element-identity","elementId":"story-title","patch":{"parentId":null}}
+```
 
 ```json
 {"type": "update-element-identity", "elementId": "story-title", "patch": {"name": "Título del capítulo"}}
@@ -114,6 +135,30 @@ slide starts exactly as you declare it.
 
 `reorder-slides` needs the complete list, every existing slide exactly once. A
 presentation always keeps at least one slide.
+
+### Portable narration
+
+Admit the selected WAV/MP3 with `add_asset` first and continue from the revision
+it returns. Then set the slide-owned script, pauses and embedded rendition:
+
+```json
+{"type":"set-slide-narration","slideId":"resultados","narration":{
+  "script":"Estos resultados cambian el siguiente trimestre.",
+  "pauseBeforeMs":250,"pauseAfterMs":600,
+  "audio":{"assetId":"voice-resultados","provenance":"human-recorded"}
+}}
+```
+
+`provenance` is `human-recorded` or `synthetic`. Provider/model/voice IDs,
+credits, consent records and generation jobs never enter the portable command.
+A script-only draft omits `audio`. Clear the whole narration explicitly:
+
+```json
+{"type":"clear-slide-narration","slideId":"resultados"}
+```
+
+Clearing narration does not silently delete its asset; remove an unreferenced
+asset only when the user also asked to remove that material.
 
 ## Element states
 

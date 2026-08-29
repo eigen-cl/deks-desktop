@@ -11,5 +11,9 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./tests/setup.ts"],
     exclude: ["tests/*.test.mjs", "node_modules/**", "dist/**"],
+    // Radix portals can keep jsdom's event loop busy for tens of seconds on
+    // Docker Desktop even though the interaction completes. A short timeout
+    // reports false negatives and does not interrupt that synchronous work.
+    testTimeout: 60_000,
   },
 });

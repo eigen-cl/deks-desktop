@@ -9,18 +9,33 @@ the same fields in snake_case; the Desktop MCP takes them exactly as written her
 | Field | Meaning |
 |---|---|
 | `format` | Always `"deks"`. |
-| `codecVersion` | Current canonical output is `2`. Missing or `1` is legacy v1 input and must be decoded through the sequential migration pipeline before validation or editing; a future version is rejected. |
+| `codecVersion` | Current portable output is `3`. Missing or `1` migrates v1 → v2 → v3; explicit `2` migrates v2 → v3; a future version is rejected. |
 | `id`, `name`, `revision` | Identity and the monotonic revision every write declares. |
 | `canvas` | `{width, height}` in canvas units. Every geometry below is in those units, not pixels. |
 | `motionBeatMs` | The deck's tempo. Every duration and musical delay is a multiple of it. |
 | `motion` | The complete three-role declaration everything else inherits from. |
 | `palette` | Six semantic roles: `primary`, `secondary`, `accent`, `background`, `text`, `subtext`. |
-| `assets` | Declared asset descriptors. An image state references one by `assetId`. |
-| `elements` | The identities: `id`, `kind`, `name`, `isLocked`; for text its fixed `content`, `fontFamily`, `horizontalAlignment`, `verticalAlignment`, `overflowMode`; for a shape its `shapeKind`; for a number its `animateMagnitude`. |
+| `assets` | Declared asset descriptors. An image state or slide narration references one by `assetId`. |
+| `elements` | The identities: `id`, `kind`, `name`, optional logical `parentId`, `isLocked`; for text its fixed `content`, `fontFamily`, `horizontalAlignment`, `verticalAlignment`, `overflowMode`; for a shape its `shapeKind`; for a number its `animateMagnitude`. |
 | `slides` | The ordered checkpoints. |
 
 There is no transitions array. A boundary is simply two adjacent slides, and each
 element's role at that boundary follows from which of the two it has a state on.
+
+### Logical element groups
+
+A named identity with `kind: "group"` is a logical folder. An element belongs to
+it when the element identity's `parentId` references that group; groups may be
+nested and the parent graph is acyclic. Grouping never changes a member's
+geometry, style, z-order or motion: every state remains absolute canvas data.
+A logical group needs no slide state and does not render or transform descendants.
+
+Collision diagnostics first resolve each rendered identity's outermost group
+ancestor. Two rendered elements with the same non-null effective group are not
+collision candidates. Different groups, two ungrouped elements, or one grouped
+plus one ungrouped element remain candidates. A group identity itself is never a
+collision candidate. Grouping suppresses noise only; it does not hide a real
+overlap across group boundaries.
 
 ### Image assets
 
@@ -52,9 +67,42 @@ dimensions, hashes and canonical SVG rather than trusting an extension or declar
 media type. Web PPTX export keeps admitted SVG as vector artwork and includes a
 PNG compatibility fallback for PowerPoint consumers that cannot render SVG.
 
+### Narration audio assets
+
+Codec v3 admits `audio/wav` canonical RIFF/WAVE integer PCM (16 or 24 bit) and
+frame-only `audio/mpeg` MPEG-1 Layer III. Audio is at most 50,000,000 bytes and
+10 minutes, has one or two channels and a sample rate from 8,000 to 48,000 Hz.
+Admission sniffs and parses the bytes; extensions and declared MIME are not
+evidence. WAV uses one `fmt ` chunk followed by `data`; portable MP3 has no ID3
+metadata or trailing bytes. The normal recording profile is mono, 24 kHz,
+16-bit WAV so Web and Desktop do not persist a browser-specific capture codec.
+
+Narration audio is always `kind: "embedded"` and travels in the `.deks` by
+content hash. A remote URL is not portable narration. The file contains the
+selected rendition and whether it is `human-recorded` or `synthetic`; provider,
+model, voice ID, generation job, credits, consent and revocation remain in the
+host that produced it.
+
 ## Slide
 
-`id`, `name`, `isTemplate`, `background`, an optional `motion` patch, and `states`.
+`id`, `name`, `isTemplate`, `background`, optional `motion`, optional
+`narration`, and `states`.
+
+`narration`, when present, is exactly:
+
+```json
+{
+  "script": "Texto que se dirá en esta slide.",
+  "pauseBeforeMs": 250,
+  "pauseAfterMs": 600,
+  "audio": {"assetId": "voice-intro", "provenance": "human-recorded"}
+}
+```
+
+`script` is non-empty plain text. Both pauses are integer milliseconds from
+0 through 60,000. `audio` is optional while a script is being drafted; when
+present it references an admitted embedded WAV/MP3 asset and provenance is
+`human-recorded` or `synthetic`. Playback is a host concern, not renderer state.
 
 `background` is `{"kind":"solid","color":"#RRGGBB"}` or
 `{"kind":"linear-gradient","startColor":"#…","endColor":"#…","angleDeg":n}`.
@@ -82,7 +130,7 @@ the field on serialization.
 | `link-button` | `label`, `url` (absolute HTTPS), `fill`, `textColor`, `fontFamily`, `fontSize`, `fontWeight`, `cornerRadius`, `stroke`, `strokeWidth` |
 | `icon` | `iconFamily`, `iconName`, `fill`, `strokeWidth` |
 | `number` | `value`, `decimals`, `groupSeparator`, `decimalSeparator`, `symbol`, `symbolPosition`, plus the whole text typography set |
-| `group` | nothing beyond the common geometry |
+| `group` | logical identity only; it normally has no state and never transforms descendants |
 
 A `line` uses `stroke` with a solid transparent `shapeFill`, never a gradient.
 

@@ -40,7 +40,7 @@ export const MCP_TOOLS = Object.freeze([
   },
   {
     name: "add_asset",
-    description: "Register safe image bytes as an embedded asset of a local DEKS presentation and declare it in the document. Returns the asset id to reference from an image element via apply_commands. PNG, JPEG, GIF, WebP or sanitized static SVG; the media type is decided by the bytes, not by what the caller declares.",
+    description: "Register portable image or narration audio bytes as an embedded asset of a local DEKS presentation and declare it in the document. Returns the asset id for an image state or slide narration. PNG, JPEG, GIF, WebP, sanitized static SVG, canonical MP3 or PCM WAV; the media type is decided by the bytes.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -49,7 +49,7 @@ export const MCP_TOOLS = Object.freeze([
         presentation_id: { type: "string", minLength: 1 },
         expected_revision: { type: "integer", minimum: 0 },
         idempotency_key: { type: "string", minLength: 8, maxLength: 200 },
-        base64: { type: "string", minLength: 1, description: "Raw image bytes, base64 encoded." },
+        base64: { type: "string", minLength: 1, description: "Raw image or audio bytes, base64 encoded." },
         original_filename: { type: "string", maxLength: 200 },
       },
     },
@@ -57,7 +57,7 @@ export const MCP_TOOLS = Object.freeze([
   },
   {
     name: "apply_commands",
-    description: "Apply a validated batch of DEKS Core commands as one local revision.",
+    description: "Apply a validated batch of DEKS Core commands as one local revision, including slide narration set/clear. For update-element-identity, parentId: null removes logical group membership.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
